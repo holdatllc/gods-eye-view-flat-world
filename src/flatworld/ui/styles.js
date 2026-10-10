@@ -28,6 +28,10 @@ body.flatworld-active .fw-panel { display: block; }
 body.flatworld-active #left-panel-stack { display: none !important; }
 .fw-panel h3 { margin: 10px 0 5px; font-size: 10px; letter-spacing: 0.16em; color: #39e1ff; font-weight: 600; }
 .fw-panel h3:first-child { margin-top: 0; }
+.fw-panel h3 { cursor: pointer; user-select: none; }
+.fw-panel h3::after { content: ' ▾'; color: #4d8fa0; }
+.fw-section.collapsed > h3::after { content: ' ▸'; }
+.fw-section.collapsed > :not(h3) { display: none !important; }
 .fw-row { display: flex; gap: 5px; flex-wrap: wrap; margin: 3px 0; }
 .fw-btn { font: inherit; color: #cfeef7; background: rgba(57, 225, 255, 0.08); border: 1px solid rgba(57, 225, 255, 0.3);
   border-radius: 5px; padding: 4px 7px; cursor: pointer; }

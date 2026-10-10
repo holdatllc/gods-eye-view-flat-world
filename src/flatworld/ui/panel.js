@@ -44,8 +44,28 @@ export function createPanel({ view, mode, live, vectors, ice, routes, frame, att
   const panel = el('div', { class: 'fw-panel', role: 'region', 'aria-label': 'Flat world controls' });
   document.body.appendChild(panel);
   const sections = {};
+  const collapsedKey = 'gev.flatworld.collapsed.v1';
+  let collapsed = {};
+  try {
+    collapsed = JSON.parse(localStorage.getItem(collapsedKey) || '{"ice":true,"environment":true}');
+  } catch {
+    collapsed = { ice: true, environment: true };
+  }
   const section = (id, title) => {
-    const box = el('div', { class: `fw-section fw-${id}` }, el('h3', {}, title));
+    const heading = el('h3', { role: 'button', tabindex: '0', title: 'Show or hide' }, title);
+    const box = el('div', { class: `fw-section fw-${id}` }, heading);
+    const toggleSection = () => {
+      box.classList.toggle('collapsed');
+      collapsed[id] = box.classList.contains('collapsed');
+      try {
+        localStorage.setItem(collapsedKey, JSON.stringify(collapsed));
+      } catch {
+        /* private mode */
+      }
+    };
+    heading.addEventListener('click', toggleSection);
+    heading.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && toggleSection());
+    if (collapsed[id]) box.classList.add('collapsed');
     panel.appendChild(box);
     sections[id] = box;
     return box;
@@ -384,7 +404,7 @@ export function createPanel({ view, mode, live, vectors, ice, routes, frame, att
       if (f.domain.domain === DOMAIN_GPS) lastReal = { kind: 'gps', lat: f.domain.lat, lon: f.domain.lon, range: view.controls.distance, heading: f.heading, pitch: view.controls.pitch };
       kv(focusBox, [
         ...describe(f.domain, f.x, f.y),
-        ['Altitude', fmtDistance(f.altitude / view.chunks.exaggeration)],
+        ['Altitude', fmtDistance(f.altitude)],
         ['Heading', `${f.heading.toFixed(1)}°`],
       ]);
     }

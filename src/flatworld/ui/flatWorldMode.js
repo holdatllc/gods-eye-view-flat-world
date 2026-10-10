@@ -84,7 +84,7 @@ export class FlatWorldMode {
   syncHiddenGlobe() {
     const f = this.view.focus;
     if (!f || f.domain.domain !== DOMAIN_GPS) return;
-    const height = Math.min(Math.max(f.altitude / this.view.chunks.exaggeration, 2000), 2.0e7);
+    const height = Math.min(Math.max(f.altitude, 2000), 2.0e7);
     this.viewer.camera.setView({
       destination: Cesium.Cartesian3.fromDegrees(f.domain.lon, f.domain.lat, height),
       orientation: { heading: 0, pitch: -Math.PI / 2, roll: 0 },
@@ -117,7 +117,7 @@ export class FlatWorldMode {
           new Cesium.HeadingPitchRange(
             Cesium.Math.toRadians(f.heading),
             Cesium.Math.toRadians(Math.min(f.pitchDeg, -1)),
-            Math.min(range / e, 3e7),
+            Math.min(range, 3e7),
           ),
         );
         camera.lookAtTransform(Cesium.Matrix4.IDENTITY);

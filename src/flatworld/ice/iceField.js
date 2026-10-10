@@ -184,10 +184,13 @@ export function createIceField(overrides = {}, { boundaryRadius }) {
     // Escarpments: terraced ice cliffs where ranges meet the sheet.
     const cliffZone = p.cliffAmount * smoothstep(0.1, 0.5, rangeMask) * smoothstep(-0.1, 0.35, fbm(x / 80000, y / 80000, s + 17, 3));
     if (cliffZone > 0) {
-      const step = p.cliffStepM;
-      const q = (h - p.rimHeightM) / step;
+      // Riser height and phase wander so escarpments read as broken ice cliffs, not strata.
+      const step = p.cliffStepM * (1 + 0.45 * fbm(x / 30000, y / 30000, s + 19, 2));
+      const offset = 0.5 * step * gradientNoise(x / 9000, y / 9000, s + 21);
+      const q = (h - p.rimHeightM + offset) / step;
       const fl = Math.floor(q);
-      const terraced = p.rimHeightM + (fl + smoothstep(0.86, 1, q - fl)) * step;
+      const sharp = 0.8 + 0.12 * gradientNoise(x / 4000, y / 4000, s + 23);
+      const terraced = p.rimHeightM - offset + (fl + smoothstep(sharp, 1, q - fl)) * step;
       h += t * cliffZone * (terraced - h);
     }
 
