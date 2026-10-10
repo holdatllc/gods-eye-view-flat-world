@@ -45,7 +45,18 @@ export class ChunkManager {
 
   configure({ iceParams, rotationDeg }) {
     for (const w of this.workers) w.postMessage({ type: 'config', iceParams, rotationDeg });
-    this.clear();
+    if (Number.isFinite(rotationDeg)) {
+      this.clear();
+      return;
+    }
+    // New ice parameters only invalidate chunks that contain hypothetical ice.
+    for (const [key, c] of this.chunks) {
+      if (c.data.domainMix !== 'gps') {
+        this._dispose(c);
+        this.chunks.delete(key);
+      }
+    }
+    this.pending.clear();
   }
 
   clear() {

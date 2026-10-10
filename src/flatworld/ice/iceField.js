@@ -15,16 +15,23 @@ export const DEFAULT_ICE_PARAMS = Object.freeze({
   rimHeightM: 2832,
   /** Distance over which hypothetical relief fades in beyond the circle. */
   transitionM: 250000,
-  mountainAmplitudeM: 4200,
-  mountainScaleM: 180000,
-  swellAmplitudeM: 1400,
-  glacierDepthM: 900,
-  glacierAmount: 0.65,
-  cliffAmount: 0.55,
-  cliffStepM: 140,
+  /** Peak relief of mountain ranges above the ice sheet. */
+  mountainAmplitudeM: 3600,
+  /** Base wavelength of mountain ridges. */
+  mountainScaleM: 42000,
+  /** Fraction of the ice that lies inside mountain ranges (0–1). */
+  rangeCoverage: 0.45,
+  swellAmplitudeM: 900,
+  /** Depth of glacier valleys carved through the ranges. */
+  glacierDepthM: 1500,
+  glacierAmount: 0.75,
+  /** Ice-cliff escarpments: strength and riser height. */
+  cliffAmount: 0.6,
+  cliffStepM: 320,
   crevasseDensity: 0.6,
-  crevasseDepthM: 28,
-  snowFill: 0.45,
+  crevasseDepthM: 30,
+  /** How much snow smooths the low ground between ranges. */
+  snowFill: 0.5,
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -148,61 +155,72 @@ export function createIceField(overrides = {}, { boundaryRadius }) {
     const r = Math.hypot(x, y);
     const beyond = r - boundaryRadius;
     const t = smoothstep(0, p.transitionM, beyond);
-
-    // Domain warp keeps ranges and glaciers from looking grid-aligned.
     const ms = p.mountainScaleM;
-    const wx = x / ms + 2.2 * fbm(x / (ms * 3.1), y / (ms * 3.1), s + 11, 3);
-    const wy = y / ms + 2.2 * fbm(x / (ms * 2.9) + 40, y / (ms * 2.9) - 13, s + 23, 3);
 
-    const swell = p.swellAmplitudeM * fbm(x / 2.2e6, y / 2.2e6, s + 1, 4);
-    const rangeMask = smoothstep(-0.15, 0.45, fbm(x / (ms * 6), y / (ms * 6), s + 5, 3));
-    const mountains = p.mountainAmplitudeM * rangeMask * ridged(wx, wy, s + 7, 7);
+    // Continental structure: broad swells and where the ranges are.
+    const swell = p.swellAmplitudeM * fbm(x / 1.6e6, y / 1.6e6, s + 1, 4);
+    const coverage = fbm(x / 3.5e5, y / 3.5e5, s + 5, 4);
+    const edge = 0.5 - p.rangeCoverage; // fbm is roughly symmetric about 0
+    const rangeMask = smoothstep(edge * 0.5 - 0.12, edge * 0.5 + 0.18, coverage);
 
-    // Glaciers: negative ridges of a second warped field carve U-shaped valleys.
-    const gv = ridged(wx * 0.7 + 100, wy * 0.7 - 50, s + 13, 4);
-    const valley = Math.pow(Math.max(0, gv - 0.42) / 0.58, 1.6);
-    const glacier = p.glacierAmount * valley;
-    let h = p.rimHeightM + t * (swell + mountains - p.glacierDepthM * glacier);
+    // Domain-warped ridged multifractal: sharp arêtes and peaks.
+    const wx = x / ms + 1.6 * fbm(x / (ms * 4.3), y / (ms * 4.3), s + 11, 3);
+    const wy = y / ms + 1.6 * fbm(x / (ms * 3.9) + 40, y / (ms * 3.9) - 13, s + 23, 3);
+    const ridges = ridged(wx, wy, s + 7, 8);
+    const peaks = Math.pow(Math.min(1, ridges * 1.15), 1.7);
+    const mountains = p.mountainAmplitudeM * Math.pow(rangeMask, 0.8) * peaks;
 
-    // Terraced ice cliffs on the flanks of ranges.
-    const cliffMask = p.cliffAmount * rangeMask * smoothstep(0.1, 0.5, fbm(x / 60000, y / 60000, s + 17, 2) + 0.3);
-    if (cliffMask > 0) {
+    // Glacier valleys: a coarser ridge network, inverted, carves U-shaped troughs through ranges.
+    const gv = ridged(wx * 0.45 + 100, wy * 0.45 - 50, s + 13, 4);
+    const valleyShape = smoothstep(0.5, 0.86, gv);
+    const glacier = p.glacierAmount * valleyShape * (0.35 + 0.65 * rangeMask);
+    const carve = p.glacierDepthM * glacier * (0.4 + 0.6 * peaks);
+
+    // Ice-sheet surface: gentle undulation, plus metre-scale sastrugi.
+    const sheet = 140 * fbm(x / 22000, y / 22000, s + 31, 4) + 1.6 * gradientNoise(x / 45, y / 120, s + 41);
+
+    let h = p.rimHeightM + t * (swell + mountains - carve + sheet);
+
+    // Escarpments: terraced ice cliffs where ranges meet the sheet.
+    const cliffZone = p.cliffAmount * smoothstep(0.1, 0.5, rangeMask) * smoothstep(-0.1, 0.35, fbm(x / 80000, y / 80000, s + 17, 3));
+    if (cliffZone > 0) {
       const step = p.cliffStepM;
-      const q = h / step;
+      const q = (h - p.rimHeightM) / step;
       const fl = Math.floor(q);
-      const terraced = (fl + smoothstep(0.82, 1, q - fl)) * step;
-      h += t * cliffMask * (terraced - h);
+      const terraced = p.rimHeightM + (fl + smoothstep(0.86, 1, q - fl)) * step;
+      h += t * cliffZone * (terraced - h);
     }
 
-    // Snow fills low, sheltered ground and softens it.
-    const snowFill = p.snowFill * smoothstep(0.35, 0, rangeMask * ridged(wx, wy, s + 7, 3));
-    h -= t * snowFill * 0.15 * mountains * 0.2;
+    // Snow fills sheltered low ground between ranges.
+    const lowland = 1 - rangeMask;
+    const snow = Math.min(1, p.snowFill * lowland + glacier * 0.3 + 0.4);
 
-    // Crevasse fields: narrow cellular cracks where glaciers flow.
+    // Crevasse fields where glaciers flow and around cliff edges, oriented across the flow.
     let crevasse = 0;
     if (p.crevasseDensity > 0) {
-      const flow = smoothstep(0.05, 0.4, glacier + 0.25 * fbm(x / 9000, y / 9000, s + 29, 2));
-      if (flow > 0) {
-        // Stretch cells along the outward (flow) direction so cracks run across it.
-        const ux = r > 0 ? x / r : 1;
-        const uy = r > 0 ? y / r : 0;
-        const along = (x * ux + y * uy) / 34;
-        const across = (-x * uy + y * ux) / 140;
-        const { f1, f2 } = worley(along, across, s + 37);
-        const edge = f2 - f1;
-        crevasse = flow * p.crevasseDensity * smoothstep(0.09, 0.0, edge);
+      const zone = Math.max(glacier * 1.3, cliffZone * 0.8) * smoothstep(-0.2, 0.3, fbm(x / 15000, y / 15000, s + 29, 3));
+      if (zone > 0.05) {
+        const ang = 2.4 * fbm(x / 60000, y / 60000, s + 33, 2);
+        const ca = Math.cos(ang);
+        const sa = Math.sin(ang);
+        const jitter = 0.35 * gradientNoise(x / 90, y / 90, s + 35);
+        const u = (x * ca + y * sa) / 38 + jitter;
+        const v = (-x * sa + y * ca) / 260;
+        const { f1, f2 } = worley(u, v, s + 37);
+        crevasse = Math.min(1, zone) * p.crevasseDensity * smoothstep(0.11, 0.0, f2 - f1);
         h -= t * crevasse * p.crevasseDepthM;
       }
     }
 
-    const rock = t * rangeMask * smoothstep(0.55, 0.85, mountains / Math.max(1, p.mountainAmplitudeM));
-    const blueIce = t * Math.min(1, cliffMask * 1.4 + glacier * 0.5);
+    const relief = Math.max(0, (mountains - carve) / Math.max(1, p.mountainAmplitudeM));
+    const rock = t * rangeMask * smoothstep(0.32, 0.62, relief) * smoothstep(0.3, 0.7, peaks);
+    const blueIce = t * Math.min(1, glacier * 0.9 + cliffZone * 0.9);
     return {
       height: h,
       rock,
       blueIce,
       crevasse: t * crevasse,
-      snow: Math.min(1, snowFill + 0.5),
+      snow,
       transition: t,
     };
   }
@@ -212,24 +230,30 @@ export function createIceField(overrides = {}, { boundaryRadius }) {
 
 /** sRGB colour of an ice-domain surface sample (0–255 each), with a little deterministic grain. */
 export function iceColor(sampleResult, x, y, slope, seed = 1892) {
-  const { rock, blueIce, crevasse } = sampleResult;
-  const grain = 0.04 * gradientNoise(x / 7.3, y / 7.3, seed + 99) + 0.03 * gradientNoise(x / 61, y / 61, seed + 98);
-  // Snow → wind-packed snow → blue ice → rock → crevasse shadow.
-  let r = 0.93 + grain;
-  let g = 0.95 + grain;
-  let b = 0.99 + grain * 0.6;
-  const steep = Math.min(1, Math.max(0, (slope - 0.35) / 0.5));
-  const ice = Math.min(1, blueIce + steep * 0.6);
-  r += (0.62 - r) * ice;
-  g += (0.79 - g) * ice;
+  const { rock, blueIce, crevasse, snow } = sampleResult;
+  const grain = 0.035 * gradientNoise(x / 7.3, y / 7.3, seed + 99) + 0.03 * gradientNoise(x / 61, y / 61, seed + 98);
+  const drift = 0.05 * gradientNoise(x / 900, y / 2600, seed + 97); // wind-blown snow streaks
+  // Fresh snow → wind-packed firn → polished blue ice → exposed rock → crevasse shadow.
+  let r = 0.94 + grain + drift * 0.5;
+  let g = 0.955 + grain + drift * 0.5;
+  let b = 0.985 + grain * 0.6 + drift * 0.3;
+  const firn = Math.max(0, 1 - snow) * 0.5;
+  r -= 0.06 * firn;
+  g -= 0.04 * firn;
+  b -= 0.01 * firn;
+  const steep = Math.min(1, Math.max(0, (slope - 0.45) / 0.4));
+  const ice = Math.min(1, blueIce * 0.85 + steep * 0.55);
+  r += (0.56 - r) * ice;
+  g += (0.76 - g) * ice;
   b += (0.92 - b) * ice;
-  const rk = Math.min(1, rock * (0.4 + steep));
-  r += (0.27 - r) * rk;
-  g += (0.26 - g) * rk;
-  b += (0.27 - b) * rk;
-  r += (0.08 - r) * crevasse;
-  g += (0.2 - g) * crevasse;
-  b += (0.36 - b) * crevasse;
+  const rk = Math.min(1, rock * (0.35 + 1.2 * steep));
+  const rockTone = 0.2 + 0.08 * gradientNoise(x / 140, y / 140, seed + 96);
+  r += (rockTone + 0.03 - r) * rk;
+  g += (rockTone + 0.01 - g) * rk;
+  b += (rockTone - b) * rk;
+  r += (0.05 - r) * crevasse;
+  g += (0.16 - g) * crevasse;
+  b += (0.33 - b) * crevasse;
   const to8 = (v) => Math.max(0, Math.min(255, Math.round(v * 255)));
   return [to8(r), to8(g), to8(b)];
 }

@@ -38,7 +38,7 @@ export class FlatWorldView {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.85;
+    this.renderer.toneMappingExposure = 0.62;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -302,13 +302,17 @@ export class FlatWorldView {
     this.sky.material.uniforms.sunPosition.value.copy(dir);
     this.sky.visible = space < 0.999;
     this.stars.position.copy(this.camera.position);
-    this.stars.material.color.setScalar(Math.max(space, 1 - day) * 0.9);
+    const starLevel = Math.max(space, 1 - day) * 0.9;
+    this.stars.material.color.setScalar(starLevel);
+    this.stars.visible = starLevel > 0.03;
     this.renderer.setClearColor(0x000000, 1);
     const weatherFog = this.weather?.fogDensity?.(focus) ?? 0;
     const haze = 1 / Math.max(6e4, alt * 25);
     this.scene.fog.density = (haze * (1 - space) + weatherFog) * (0.35 + 0.65 * day);
-    const fogColor = new THREE.Color().setHSL(0.58, 0.35, 0.12 + 0.6 * day);
-    this.scene.fog.color.copy(fogColor);
+    // Fog matches the sky near the horizon so distant terrain fades into it, not against it.
+    const horizon = new THREE.Color(0.78, 0.86, 0.95).multiplyScalar(0.18 + 0.82 * day);
+    if (weatherFog > 0) horizon.lerp(new THREE.Color(0.93, 0.95, 0.98).multiplyScalar(0.3 + 0.7 * day), Math.min(1, weatherFog * 4000));
+    this.scene.fog.color.copy(horizon);
     this.focus = focus;
   }
 

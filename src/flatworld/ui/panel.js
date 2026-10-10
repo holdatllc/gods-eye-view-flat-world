@@ -31,7 +31,7 @@ export function fmtLatLon(lat, lon) {
   return `${Math.abs(lat).toFixed(5)}°${ns} ${Math.abs(lon).toFixed(5)}°${ew}`;
 }
 
-export function createPanel({ view, mode, live, vectors, frame, attributions }) {
+export function createPanel({ view, mode, live, vectors, ice, frame, attributions }) {
   const toggle = el(
     'button',
     { class: 'fw-toggle', type: 'button', title: 'Switch between the globe and the flat world', onclick: () => mode.toggle() },
@@ -131,6 +131,61 @@ export function createPanel({ view, mode, live, vectors, frame, attributions }) 
     el('div', { class: 'fw-note' }, 'Real-world terrain is lit by the true sun for the chosen time. The hypothetical ice shares the South Pole\'s sky, or a fixed low sun.'),
   );
 
+  // ---- Hypothetical ice world --------------------------------------------------------------
+  const iceBox = section('ice', 'ICE WORLD (HYPOTHETICAL)');
+  const iceParams = { ...ice.field.params };
+  const slider = (label, key, min, max, step, fmt = (v) => v) => {
+    const value = el('span', {}, String(fmt(iceParams[key])));
+    const input = el('input', { type: 'range', min: String(min), max: String(max), step: String(step), value: String(iceParams[key]) });
+    input.addEventListener('input', () => {
+      iceParams[key] = Number(input.value);
+      value.textContent = String(fmt(iceParams[key]));
+    });
+    input.addEventListener('change', () => applyIce());
+    iceBox.append(el('div', { class: 'fw-kv' }, el('b', {}, label), value), input);
+  };
+  const applyIce = () => {
+    view.chunks.configure({ iceParams });
+    ice.setIceParams(iceParams);
+  };
+  const seedInput = el('input', { type: 'number', value: String(iceParams.seed), style: 'width:90px' });
+  seedInput.addEventListener('change', () => {
+    iceParams.seed = Math.floor(Number(seedInput.value) || 0);
+    applyIce();
+  });
+  iceBox.append(el('div', { class: 'fw-kv' }, el('b', {}, 'World seed'), seedInput));
+  slider('Mountains', 'mountainAmplitudeM', 0, 7000, 100, (v) => `${v} m`);
+  slider('Ranges', 'rangeCoverage', 0, 1, 0.05);
+  slider('Glaciers', 'glacierAmount', 0, 1, 0.05);
+  slider('Ice cliffs', 'cliffAmount', 0, 1, 0.05);
+  slider('Crevasses', 'crevasseDensity', 0, 1, 0.05);
+  slider('Snow fill', 'snowFill', 0, 1, 0.05);
+  const w = ice.weather;
+  const weatherBtn = el('button', { class: 'fw-btn on', type: 'button' }, 'POLAR WEATHER');
+  weatherBtn.addEventListener('click', () => {
+    w.enabled = !w.enabled;
+    weatherBtn.classList.toggle('on', w.enabled);
+  });
+  const caveBtn = el('button', { class: 'fw-btn on', type: 'button' }, 'ICE CAVES');
+  caveBtn.addEventListener('click', () => {
+    ice.cavesEnabled = !ice.cavesEnabled;
+    caveBtn.classList.toggle('on', ice.cavesEnabled);
+  });
+  const snowSlider = el('input', { type: 'range', min: '0', max: '1', step: '0.05', value: String(w.intensity) });
+  snowSlider.addEventListener('input', () => (w.intensity = Number(snowSlider.value)));
+  const whiteSlider = el('input', { type: 'range', min: '0', max: '1', step: '0.05', value: String(w.whiteout) });
+  whiteSlider.addEventListener('input', () => (w.whiteout = Number(whiteSlider.value)));
+  const windSlider = el('input', { type: 'range', min: '0', max: '40', step: '1', value: String(w.windSpeed) });
+  windSlider.addEventListener('input', () => (w.windSpeed = Number(windSlider.value)));
+  iceBox.append(
+    el('div', { class: 'fw-row' }, weatherBtn, caveBtn,
+      el('button', { class: 'fw-btn', type: 'button', onclick: () => goVista() }, 'FIND DRAMATIC TERRAIN')),
+    el('div', { class: 'fw-kv' }, el('b', {}, 'Snowfall'), el('span', {}, '')), snowSlider,
+    el('div', { class: 'fw-kv' }, el('b', {}, 'Whiteout'), el('span', {}, '')), whiteSlider,
+    el('div', { class: 'fw-kv' }, el('b', {}, 'Wind m/s'), el('span', {}, '')), windSlider,
+    el('div', { class: 'fw-note' }, 'Everything beyond the South-Pole circle is generated from the seed. It has local X/Y only — no latitude or longitude.'),
+  );
+
   // ---- Live layers -------------------------------------------------------------------------
   const layers = section('live', 'LIVE DATA');
   const layerButtons = {};
@@ -166,6 +221,20 @@ export function createPanel({ view, mode, live, vectors, frame, attributions }) 
   // ---- Behaviour ---------------------------------------------------------------------------
   function goNorthPole() {
     view.lookAtPlane({ x: 0, y: 0, range: 2.5e6, pitch: 1.2, animate: true });
+  }
+
+  function goVista() {
+    const f = view.getFocus();
+    let x = f.x;
+    let y = f.y;
+    if (frame.domainAt(x, y) !== 'ice') {
+      const ang = Math.hypot(x, y) < 1 ? 0 : Math.atan2(y, x);
+      x = Math.cos(ang) * (frame.boundaryRadius + 600000);
+      y = Math.sin(ang) * (frame.boundaryRadius + 600000);
+    }
+    const v = ice.findVista(x, y);
+    if (!v) return;
+    view.lookAtPlane({ x: v.target.x, y: v.target.y, range: 16000, pitch: 0.18, yaw: v.yaw, animate: true });
   }
 
   function goIceFrontier() {
