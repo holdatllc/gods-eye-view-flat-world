@@ -284,7 +284,10 @@ test('every rendered roof vertex inverts to its source lat/lon within 1e-9°', (
   const w = frame.geodeticToWorld(probe.centroid.lat, probe.centroid.lon, 0);
   const back = frame.worldToDomain(w.x, w.y, 0);
   assert.ok(Math.abs(back.lat - probe.centroid.lat) < 1e-12 && Math.abs(back.lon - probe.centroid.lon) < 1e-12);
-  const [clon, clat] = tilePixelToLonLat(Z, TX, TY, 1050, 1050, E);
+  // The centroid is the mean of the source footprint's vertex lat/lons.
+  const corners = square(1000, 1000, 1100, 1100).map(([px, py]) => tilePixelToLonLat(Z, TX, TY, px, py, E));
+  const clat = corners.reduce((s, c) => s + c[1], 0) / 4;
+  const clon = corners.reduce((s, c) => s + c[0], 0) / 4;
   assert.ok(Math.abs(probe.centroid.lat - clat) < 1e-12 && Math.abs(probe.centroid.lon - clon) < 1e-12);
 });
 

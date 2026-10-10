@@ -196,21 +196,11 @@ export function createIceField(overrides = {}, { boundaryRadius }) {
     const snow = Math.min(1, p.snowFill * lowland + glacier * 0.3 + 0.4);
 
     // Crevasse fields where glaciers flow and around cliff edges, oriented across the flow.
-    let crevasse = 0;
-    if (p.crevasseDensity > 0) {
-      const zone = Math.max(glacier * 1.3, cliffZone * 0.8) * smoothstep(-0.2, 0.3, fbm(x / 15000, y / 15000, s + 29, 3));
-      if (zone > 0.05) {
-        const ang = 2.4 * fbm(x / 60000, y / 60000, s + 33, 2);
-        const ca = Math.cos(ang);
-        const sa = Math.sin(ang);
-        const jitter = 0.35 * gradientNoise(x / 90, y / 90, s + 35);
-        const u = (x * ca + y * sa) / 38 + jitter;
-        const v = (-x * sa + y * ca) / 260;
-        const { f1, f2 } = worley(u, v, s + 37);
-        crevasse = Math.min(1, zone) * p.crevasseDensity * smoothstep(0.11, 0.0, f2 - f1);
-        h -= t * crevasse * p.crevasseDepthM;
-      }
-    }
+    const crevasseZone = p.crevasseDensity > 0
+      ? Math.max(glacier * 1.3, cliffZone * 0.8) * smoothstep(-0.2, 0.3, fbm(x / 15000, y / 15000, s + 29, 3))
+      : 0;
+    const crevasse = crevasseAt(x, y, crevasseZone);
+    h -= t * crevasse * p.crevasseDepthM;
 
     const relief = Math.max(0, (mountains - carve) / Math.max(1, p.mountainAmplitudeM));
     const rock = t * rangeMask * smoothstep(0.32, 0.62, relief) * smoothstep(0.3, 0.7, peaks);
@@ -220,12 +210,26 @@ export function createIceField(overrides = {}, { boundaryRadius }) {
       rock,
       blueIce,
       crevasse: t * crevasse,
+      crevasseZone,
       snow,
       transition: t,
     };
   }
 
-  return { params: p, sample };
+  /** Crevasse intensity (0–1) at a point, given the zone strength from `sample`. */
+  function crevasseAt(x, y, zone) {
+    if (!(zone > 0.05)) return 0;
+    const ang = 2.4 * fbm(x / 60000, y / 60000, s + 33, 2);
+    const ca = Math.cos(ang);
+    const sa = Math.sin(ang);
+    const jitter = 0.35 * gradientNoise(x / 90, y / 90, s + 35);
+    const u = (x * ca + y * sa) / 38 + jitter;
+    const v = (-x * sa + y * ca) / 260;
+    const { f1, f2 } = worley(u, v, s + 37);
+    return Math.min(1, zone) * p.crevasseDensity * smoothstep(0.11, 0.0, f2 - f1);
+  }
+
+  return { params: p, sample, crevasseAt };
 }
 
 /** sRGB colour of an ice-domain surface sample (0–255 each), with a little deterministic grain. */

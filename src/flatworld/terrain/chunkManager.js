@@ -371,9 +371,24 @@ export class ChunkManager {
 
   _evict(keep) {
     if (this.chunks.size <= this.maxChunks) return;
+    // Visible chunks and all their ancestors form the refinement chain and are never evicted.
+    const protectedKeys = new Set();
+    for (const c of keep) {
+      let { level, tx, ty } = c;
+      while (level >= 0) {
+        const key = this.key(level, tx, ty);
+        if (protectedKeys.has(key)) break;
+        protectedKeys.add(key);
+        level -= 1;
+        tx = Math.floor(tx / 2);
+        ty = Math.floor(ty / 2);
+      }
+    }
+    const hardCap = Math.round(this.maxChunks * 1.5);
     const candidates = [...this.chunks.entries()]
-      .filter(([, c]) => !keep.has(c) && c.level > 0 && c.lastUsed < this.frame)
-      .sort((a, b) => a[1].lastUsed - b[1].lastUsed);
+      .filter(([key, c]) => !protectedKeys.has(key) && c.level > 0)
+      .filter(([, c]) => this.chunks.size > hardCap || c.lastUsed < this.frame)
+      .sort((a, b) => a[1].lastUsed - b[1].lastUsed || b[1].level - a[1].level);
     let excess = this.chunks.size - this.maxChunks;
     for (const [key, c] of candidates) {
       if (excess <= 0) break;

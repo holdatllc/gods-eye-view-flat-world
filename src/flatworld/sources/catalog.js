@@ -12,8 +12,10 @@ export const IMAGERY_SOURCES = Object.freeze({
     id: 'esri',
     label: 'Esri World Imagery',
     scheme: webMercatorScheme({ tileSize: 256, maxZoom: 19 }),
+    // Esri serves HTTP/1.1, so browsers allow only six connections per host; the same public
+    // service is reachable on two hostnames, which doubles tile throughput.
     url: (z, x, y) =>
-      `https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`,
+      `https://${(x + y) % 2 ? 'server' : 'services'}.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`,
     attribution: 'Imagery: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
     format: 'rgba',
   },

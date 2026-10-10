@@ -256,6 +256,7 @@ export function createChunkBuilder({ store, frameOptions = {}, iceParams = {} })
 
     // ---- Texture ------------------------------------------------------------------------------
     const rgba = new Uint8Array(T * T * 4);
+    const scratch = { rock: 0, blueIce: 0, snow: 0, crevasse: 0 };
     const c = [0, 0, 0];
     const c2 = [0, 0, 0];
     let iceTexels = 0;
@@ -268,12 +269,39 @@ export function createChunkBuilder({ store, frameOptions = {}, iceParams = {} })
           iceTexels += 1;
           const x = x0 + (i + 0.5) * texStep;
           const y = y0 + (j + 0.5) * texStep;
-          const sm = ice.sample(x, y);
-          // Slope from the vertex normals (nearest vertex is enough for colouring).
+          // Material fields vary slowly: interpolate them from the vertex samples, and evaluate
+          // only the fine detail (grain, crevasse cracks) per texel.
+          const fx = ((i + 0.5) / T) * G + 1;
+          const fy = ((j + 0.5) / T) * G + 1;
+          const ia = Math.min(Math.floor(fx), W - 2);
+          const ja = Math.min(Math.floor(fy), W - 2);
+          const u = fx - ia;
+          const v = fy - ja;
+          const s00 = iceSamples[ja * W + ia];
+          const s10 = iceSamples[ja * W + ia + 1];
+          const s01 = iceSamples[(ja + 1) * W + ia];
+          const s11 = iceSamples[(ja + 1) * W + ia + 1];
+          if (!s00 || !s10 || !s01 || !s11) {
+            const sm = ice.sample(x, y);
+            const col = iceColor(sm, x, y, 0, ice.params.seed);
+            rgba[o] = col[0];
+            rgba[o + 1] = col[1];
+            rgba[o + 2] = col[2];
+            rgba[o + 3] = 0;
+            continue;
+          }
+          const lerp = (key) =>
+            (s00[key] * (1 - u) + s10[key] * u) * (1 - v) + (s01[key] * (1 - u) + s11[key] * u) * v;
+          const zone = lerp('crevasseZone');
+          const tr = lerp('transition');
+          scratch.rock = lerp('rock');
+          scratch.blueIce = lerp('blueIce');
+          scratch.snow = lerp('snow');
+          scratch.crevasse = tr * ice.crevasseAt(x, y, zone);
           const gi = Math.min(G, Math.round(((i + 0.5) / T) * G));
           const gj = Math.min(G, Math.round(((j + 0.5) / T) * G));
           const ny = normal[(gj * (G + 1) + gi) * 3 + 1];
-          const col = iceColor(sm, x, y, Math.sqrt(Math.max(0, 1 - ny * ny)), ice.params.seed);
+          const col = iceColor(scratch, x, y, Math.sqrt(Math.max(0, 1 - ny * ny)), ice.params.seed);
           rgba[o] = col[0];
           rgba[o + 1] = col[1];
           rgba[o + 2] = col[2];
