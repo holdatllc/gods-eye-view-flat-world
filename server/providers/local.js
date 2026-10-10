@@ -26,6 +26,7 @@ import { weatherProxy } from './weather.js';
 import { firePerimetersProxy } from './firePerimeters.js';
 import { cycloneProxy } from './cyclones.js';
 import { windProxy } from './wind.js';
+import { flatworldDataPlugin } from '../standalone/flatworldData.js';
 
 /**
  * Construct the local provider plugins in their established order.
@@ -60,6 +61,8 @@ function localProviderPlugins({ realtime } = {}) {
     cycloneProxy(),
     mapillaryProxy(),
     firePerimetersProxy(),
+    // Read-only local tiles for the flat world (ETOPO pyramid, NASA mirrors) at /flatworld-data.
+    flatworldDataPlugin(),
     keySetupEndpoint(),
   ];
 }
