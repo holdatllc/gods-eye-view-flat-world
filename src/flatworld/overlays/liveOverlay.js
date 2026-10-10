@@ -16,7 +16,7 @@ const KINDS = {
   flights: { color: 0x39e1ff, layer: 'flights', size: 1, label: 'Aircraft' },
   military: { color: 0xffb020, layer: 'military', size: 1, label: 'Military aircraft' },
   vessels: { color: 0x5dff8f, layer: 'ais-live-vessels', size: 1.4, label: 'Ship' },
-  satellites: { color: 0xff5ad7, layer: 'satellites', size: 1.8, label: 'Satellite' },
+  satellites: { color: 0xff5ad7, layer: 'satellites', size: 0.9, label: 'Satellite' },
 };
 const MAX_PER_KIND = 12000;
 
@@ -103,13 +103,61 @@ export class LiveOverlay {
       new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, fog: false, depthTest: false }),
     );
     this.trackMarker.rotateX(-Math.PI / 2);
+    // Ground track (sub-satellite points) and orbit path for a tracked satellite.
+    this.groundTrack = new THREE.Line(
+      new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({ color: 0xff5ad7, transparent: true, opacity: 0.9, depthTest: false, fog: false }),
+    );
+    this.orbitPath = new THREE.Line(
+      new THREE.BufferGeometry(),
+      new THREE.LineDashedMaterial({ color: 0xffb3ec, dashSize: 60000, gapSize: 40000, transparent: true, opacity: 0.7, depthTest: false, fog: false }),
+    );
+    for (const l of [this.groundTrack, this.orbitPath]) {
+      l.frustumCulled = false;
+      l.renderOrder = 15;
+      l.visible = false;
+    }
     this.trackMarker.visible = false;
     this.group.add(this.trackMarker);
+    this.trackLines = new THREE.Group();
+    this.trackLines.add(this.groundTrack, this.orbitPath);
+  }
+
+  /** Ground track ±1 orbit around now, from the satellite layer's own SGP4 propagation. */
+  _buildSatelliteTrack(id) {
+    const mod = this._module(KINDS.satellites.layer);
+    const track = mod?.getSatelliteOrbitTrack?.(id);
+    if (!track) return false;
+    const period = track.periodSec || 5400;
+    const now = Date.now();
+    const ground = [];
+    const orbit = [];
+    const e = this.view?.chunks.exaggeration ?? 1;
+    for (let t = -period; t <= period; t += Math.max(20, period / 400)) {
+      const p = track.positionAt(new Date(now + t * 1000));
+      if (!p) continue;
+      const w = this.frame.geodeticToWorld(p.latitude, p.longitude);
+      if (!w) continue;
+      ground.push(w.x, 2000 * e, -w.y);
+      orbit.push(w.x, p.altitude * e, -w.y);
+    }
+    this.groundTrack.geometry.dispose();
+    this.groundTrack.geometry = new THREE.BufferGeometry();
+    this.groundTrack.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ground), 3));
+    this.orbitPath.geometry.dispose();
+    this.orbitPath.geometry = new THREE.BufferGeometry();
+    this.orbitPath.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(orbit), 3));
+    this.orbitPath.computeLineDistances();
+    this.groundTrack.visible = this.orbitPath.visible = true;
+    this.trackBuiltAt = now;
+    this.trackPeriodSec = period;
+    return true;
   }
 
   attach(view) {
     this.view = view;
     view.scene.add(this.group);
+    view.scene.add(this.trackLines);
     this.labels = document.createElement('div');
     this.labels.className = 'flatworld-labels';
     view.host.appendChild(this.labels);
@@ -137,17 +185,20 @@ export class LiveOverlay {
     if (!mod || !this.isLayerOn(kind)) return [];
     let rows = [];
     try {
-      rows = mod.getAnalystRecords?.() ?? [];
+      rows = mod.getAnalystRecords?.(MAX_PER_KIND) ?? [];
     } catch {
       rows = [];
     }
-    if (!rows.length) {
-      try {
-        rows = (mod.getAllPositions?.() ?? []).map((p) => ({ ...p, lat: p.latitude, lon: p.longitude }));
-      } catch {
-        rows = [];
-      }
+    let shown = [];
+    try {
+      shown = mod.getAllPositions?.() ?? [];
+    } catch {
+      shown = [];
     }
+    if (!rows.length) rows = shown.map((p) => ({ ...p, lat: p.latitude, lon: p.longitude }));
+    // Some feeds omit altitude in their records (e.g. military contacts without a barometric
+    // value); the layer's own rendered altitude for the same contact is used then.
+    const shownAlt = new Map(shown.map((p) => [String(p.id), p.altitudeM]));
     const out = [];
     for (const a of rows) {
       const lat = a.lat ?? a.latitude;
@@ -158,7 +209,9 @@ export class LiveOverlay {
         label: a.callsign || a.name || a.label || String(a.id),
         lat,
         lon,
-        altitudeM: Number.isFinite(a.altitudeM) ? a.altitudeM : 0,
+        altitudeM: Number.isFinite(a.altitudeM)
+          ? a.altitudeM
+          : Number.isFinite(shownAlt.get(String(a.icao24 ?? a.id))) ? shownAlt.get(String(a.icao24 ?? a.id)) : 0,
         heading: [a.heading, a.courseDeg, a.cog, a.trueTrack].find(Number.isFinite) ?? null,
         speedMps: a.speedMps ?? null,
         source: mod.source ?? null,
@@ -273,7 +326,7 @@ export class LiveOverlay {
         }
         q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
         const dist = p.distanceTo(cam);
-        const size = Math.max(dist * 0.018 * KINDS[kind].size * this.drawScale, 30);
+        const size = Math.max(dist * 0.0065 * KINDS[kind].size * this.drawScale, 30);
         s.setScalar(size);
         m.compose(p.clone().sub(origin), q, s);
         mesh.setMatrixAt(i, m);
@@ -302,6 +355,8 @@ export class LiveOverlay {
 
   track(kind, id) {
     this.tracked = { kind, id };
+    this.groundTrack.visible = this.orbitPath.visible = false;
+    if (kind === 'satellites') this._buildSatelliteTrack(id);
     const r = this._find(kind, id);
     if (r && this.view) {
       const w = this.frame.geodeticToWorld(r.lat, r.lon);
@@ -312,11 +367,15 @@ export class LiveOverlay {
 
   stopTracking() {
     this.tracked = null;
+    this.groundTrack.visible = this.orbitPath.visible = false;
     this.trackMarker.visible = false;
     if (this.labels) this.labels.innerHTML = '';
   }
 
   _updateTracking(view) {
+    if (this.tracked?.kind === 'satellites' && Date.now() - (this.trackBuiltAt || 0) > 60000) {
+      this._buildSatelliteTrack(this.tracked.id);
+    }
     if (!this.tracked) {
       this.trackMarker.visible = false;
       return;
@@ -395,6 +454,7 @@ export class LiveOverlay {
 
   destroy() {
     this.group.removeFromParent();
+    this.trackLines.removeFromParent();
     this.labels?.remove();
   }
 }

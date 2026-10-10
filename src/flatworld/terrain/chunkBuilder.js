@@ -16,7 +16,7 @@ import { ELEVATION_SOURCES, IMAGERY_SOURCES } from '../sources/catalog.js';
 const DEG = Math.PI / 180;
 /** Mapterhorn is used when the needed ground resolution is finer than ETOPO's ~1.8 km. */
 const FINE_TERRAIN_BELOW_M = 1500;
-const ESRI_FULL_LAT = 83.5;
+const ESRI_FULL_LAT = 81.0;
 const ESRI_MAX_LAT = 85.0;
 
 export const ROOT_TILE_SIZE = 2 ** 26; // 67,108.864 km: one root covers the whole GPS disc.
@@ -109,6 +109,7 @@ export function createChunkBuilder({ store, frameOptions = {}, iceParams = {} })
     const esri = IMAGERY_SOURCES.esri;
     const gibs = IMAGERY_SOURCES.gibsBlueMarble;
     const lights = IMAGERY_SOURCES.gibsBlackMarble;
+    const arctic = IMAGERY_SOURCES.modisArctic;
     const tZoomLights = new Int8Array(T * T);
     for (let j = 0; j < T; j += 1) {
       for (let i = 0; i < T; i += 1) {
@@ -129,8 +130,9 @@ export function createChunkBuilder({ store, frameOptions = {}, iceParams = {} })
           sampler.request(esri, d.lat, d.lon, tZoomEsri[k]);
         } else tZoomEsri[k] = -1;
         if (absLat > ESRI_FULL_LAT) {
-          tZoomGibs[k] = gibs.scheme.zoomFor(res);
-          sampler.request(gibs, d.lat, d.lon, tZoomGibs[k]);
+          const cap = d.lat > 0 ? arctic : gibs;
+          tZoomGibs[k] = cap.scheme.zoomFor(res);
+          sampler.request(cap, d.lat, d.lon, tZoomGibs[k]);
         } else tZoomGibs[k] = -1;
         // Night lights are only seen from afar; a coarser zoom keeps the request count low.
         tZoomLights[k] = lights.scheme.zoomFor(res * 2);
@@ -285,9 +287,11 @@ export function createChunkBuilder({ store, frameOptions = {}, iceParams = {} })
         let got = null;
         if (tZoomEsri[k] >= 0) got = sampler.sampleColor(esri, lat, lon, tZoomEsri[k], c);
         if (tZoomGibs[k] >= 0) {
-          const g = sampler.sampleColor(gibs, lat, lon, tZoomGibs[k], c2);
+          const g = sampler.sampleColor(lat > 0 ? arctic : gibs, lat, lon, tZoomGibs[k], c2);
           if (g) {
-            const t = got ? Math.min(1, Math.max(0, (absLat - ESRI_FULL_LAT) / (ESRI_MAX_LAT - ESRI_FULL_LAT))) : 1;
+            const lin = Math.min(1, Math.max(0, (absLat - ESRI_FULL_LAT) / (ESRI_MAX_LAT - ESRI_FULL_LAT)));
+            // Soft, wide blend so the polar cap reads as a natural ice edge, not a seam.
+            const t = got ? lin * lin * (3 - 2 * lin) : 1;
             c[0] = (got ? c[0] : 0) * (1 - t) + g[0] * t;
             c[1] = (got ? c[1] : 0) * (1 - t) + g[1] * t;
             c[2] = (got ? c[2] : 0) * (1 - t) + g[2] * t;

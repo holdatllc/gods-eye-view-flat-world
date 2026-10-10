@@ -16,6 +16,7 @@ const TYPES = {
   '.png': 'image/png',
   '.webp': 'image/webp',
   '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
   '.json': 'application/json',
   '.bin': 'application/octet-stream',
   '.pbf': 'application/x-protobuf',

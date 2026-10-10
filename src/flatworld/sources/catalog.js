@@ -29,6 +29,15 @@ export const IMAGERY_SOURCES = Object.freeze({
     attribution: 'Polar imagery: NASA Earth Observatory Blue Marble NG via NASA GIBS (public domain)',
     format: 'rgba',
   },
+  modisArctic: {
+    id: 'modisArctic',
+    label: 'NASA MODIS Terra true colour, 2026-07-20 (Arctic cap, GIBS)',
+    // Only the northern cap (north of ~84°) is mirrored locally (tools/flatworld/mirror_gibs.py).
+    scheme: geographicScheme({ tileSize: 512, maxZoom: LOCAL_GIBS_MAX_Z, rootSpanDeg: 288 }),
+    url: (z, x, y) => `${FLATWORLD_DATA_BASE}/gibs/MODIS_Terra_CorrectedReflectance_TrueColor/${z}/${x}/${y}.jpg`,
+    attribution: 'Arctic cap imagery: NASA MODIS Terra corrected reflectance, 20 July 2026, via NASA GIBS (public domain)',
+    format: 'rgba',
+  },
   gibsBlackMarble: {
     id: 'gibsBlackMarble',
     label: 'NASA Black Marble 2016 night lights (GIBS)',

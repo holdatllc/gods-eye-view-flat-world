@@ -11,6 +11,7 @@ import { FlatWorldMode } from './ui/flatWorldMode.js';
 import { LiveOverlay } from './overlays/liveOverlay.js';
 import { VectorLines } from './overlays/vectorLines.js';
 import { IceEnvironment } from './ice/iceEnvironment.js';
+import { RouteLayer } from './nav/routeLayer.js';
 import { createWorldFrame, DOMAIN_GPS, DOMAIN_ICE } from './projection/domains.js';
 import { allAttributions } from './sources/catalog.js';
 import { installStyles } from './ui/styles.js';
@@ -30,6 +31,8 @@ export function mountFlatWorld({ viewer, dataManager }) {
   view.addLayer(vectors);
   const ice = new IceEnvironment({ frame });
   view.addLayer(ice);
+  const routes = new RouteLayer({ frame });
+  view.addLayer(routes);
 
   const mode = new FlatWorldMode({
     viewer,
@@ -37,7 +40,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
     onChange: (active) => panel.setActive(active),
   });
 
-  const panel = createPanel({ view, mode, live, vectors, ice, frame, attributions: allAttributions() });
+  const panel = createPanel({ view, mode, live, vectors, ice, routes, frame, attributions: allAttributions() });
 
   // Picking: click selects a live object to track; hover reports the domain under the cursor.
   const raycaster = new THREE.Raycaster();
@@ -59,7 +62,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
       return;
     }
     const p = view.pick(e.clientX, e.clientY);
-    panel.onGroundClick?.(p, e);
+    if (p && routes.measuring) routes.addPoint(p);
   });
   let hoverPending = false;
   view.canvas.addEventListener('pointermove', (e) => {
@@ -77,6 +80,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
     live,
     vectors,
     ice,
+    routes,
     frame,
     panel,
     enter: () => mode.enter(),

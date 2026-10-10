@@ -4,6 +4,7 @@
  */
 import { DOMAIN_GPS } from '../projection/domains.js';
 import { headingToYaw } from '../render/controls.js';
+import { ROUTE_PRESETS } from '../nav/routeLayer.js';
 
 const BOOKMARK_KEY = 'gev.flatworld.bookmarks.v1';
 
@@ -31,7 +32,7 @@ export function fmtLatLon(lat, lon) {
   return `${Math.abs(lat).toFixed(5)}°${ns} ${Math.abs(lon).toFixed(5)}°${ew}`;
 }
 
-export function createPanel({ view, mode, live, vectors, ice, frame, attributions }) {
+export function createPanel({ view, mode, live, vectors, ice, routes, frame, attributions }) {
   const toggle = el(
     'button',
     { class: 'fw-toggle', type: 'button', title: 'Switch between the globe and the flat world', onclick: () => mode.toggle() },
@@ -196,6 +197,56 @@ export function createPanel({ view, mode, live, vectors, ice, frame, attribution
   }
   const trackedBox = el('div', { class: 'fw-kv' });
   layers.append(layerRow, el('div', { class: 'fw-note' }, 'Click an aircraft, ship or satellite to track it.'), trackedBox);
+
+  // ---- Routes & distortion -------------------------------------------------------------------
+  const routeBox = section('routes', 'ROUTES & DISTORTION');
+  const measureBtn = el('button', { class: 'fw-btn', type: 'button' }, 'MEASURE (CLICK 2 POINTS)');
+  measureBtn.addEventListener('click', () => {
+    routes.startMeasuring();
+    measureBtn.classList.add('on');
+  });
+  const presetSel = el('select', { class: 'fw-btn' }, el('option', { value: '' }, 'Preset route…'));
+  ROUTE_PRESETS.forEach((r, i) => presetSel.append(el('option', { value: String(i) }, r.name)));
+  presetSel.addEventListener('change', () => {
+    const r = ROUTE_PRESETS[Number(presetSel.value)];
+    if (!r) return;
+    routes.measureGeodetic(r.a, r.b);
+    view.overview();
+  });
+  const tissotBtn = el('button', { class: 'fw-btn', type: 'button' }, 'TISSOT CIRCLES');
+  tissotBtn.addEventListener('click', () => {
+    routes.tissot.visible = !routes.tissot.visible;
+    tissotBtn.classList.toggle('on', routes.tissot.visible);
+  });
+  const routeResult = el('div', { class: 'fw-kv' });
+  routeBox.append(
+    el('div', { class: 'fw-row' }, measureBtn, el('button', { class: 'fw-btn', type: 'button', onclick: () => routes.clear() }, 'CLEAR')),
+    el('div', { class: 'fw-row' }, presetSel, tissotBtn),
+    routeResult,
+    el('div', { class: 'fw-note' }, 'Cyan: real-world geodesic (shortest path on the Earth). Amber: straight line on this flat map (shortest path across the disc). Pink circles: true 500 km circles; their stretching is the projection\'s distortion. DISTORTION colours the map by east–west stretch.'),
+  );
+  routes.onResult = (r) => {
+    measureBtn.classList.remove('on');
+    if (!r) {
+      routeResult.replaceChildren();
+      return;
+    }
+    const rows = [];
+    if (r.geodesic) {
+      const pct = (r.comparison.flatOverGeodesic - 1) * 100;
+      rows.push(
+        ['Geodesic (real)', `${fmtDistance(r.geodesic.distanceM)}`],
+        ['Flat straight', `${fmtDistance(r.flat.distanceM)} on map`],
+        ['Difference', `${r.comparison.flatMinusGeodesicM >= 0 ? '+' : ''}${fmtDistance(r.comparison.flatMinusGeodesicM)} (${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)`],
+        ['Flat line walked', `${fmtDistance(r.flatPathOnEarth.groundLengthM)} on Earth`],
+        ['Geodesic on map', `${fmtDistance(r.geodesic.lengthOnMapM)} (curved)`],
+        ['Initial bearing', `${((r.geodesic.initialAzimuthDeg + 360) % 360).toFixed(1)}°`],
+      );
+    } else {
+      rows.push(['Flat distance', fmtDistance(r.flat.distanceM)], ['Geodesic', 'n/a — hypothetical ice'], ['', r.note]);
+    }
+    kv(routeResult, rows);
+  };
 
   // ---- Position readout ------------------------------------------------------------------
   const readout = section('readout', 'POSITION');

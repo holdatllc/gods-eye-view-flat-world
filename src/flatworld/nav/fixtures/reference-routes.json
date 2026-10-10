@@ -1,0 +1,179 @@
+{
+  "description": "Reference values for navigation: WGS84 geodesic (GeographicLib Geodesic.WGS84.Inverse) vs straight-line distance on the north-polar AEQD plane (app/src/flatworld/projection/aeqd.js, cross-checked with PROJ). The plane straight line is NOT a travel distance except along meridians through the North Pole; geodesic_path_length_on_plane_m is the length of the true geodesic drawn on the plane.",
+  "projection": "+proj=aeqd +lat_0=90 +lon_0=0 +datum=WGS84 +units=m +no_defs",
+  "ellipsoid": {
+    "a": 6378137.0,
+    "f": 0.0033528106647474805
+  },
+  "tools": {
+    "pyproj": "3.8.0",
+    "proj": "9.8.1",
+    "geographiclib": "2.1",
+    "node": "v24.21.0"
+  },
+  "units": "metres, degrees",
+  "routes": [
+    {
+      "from": {
+        "name": "London",
+        "lat": 51.5074,
+        "lon": -0.1278,
+        "plane_x_m": -9576.620220408882,
+        "plane_y_m": -4293419.488673419,
+        "rho_m": 4293430.169150951
+      },
+      "to": {
+        "name": "New York",
+        "lat": 40.7128,
+        "lon": -74.006,
+        "plane_x_m": -5280644.260719967,
+        "plane_y_m": -1513601.9375215613,
+        "rho_m": 5493286.323644868
+      },
+      "geodesic_m": 5585233.5789313,
+      "initial_azimuth_deg": -71.63100188681736,
+      "final_azimuth_deg": -128.75877088048765,
+      "plane_straight_line_m": 5959155.954362454,
+      "plane_straight_line_m_via_PROJ": 5959155.954362455,
+      "plane_minus_geodesic_m": 373922.3754311539,
+      "plane_over_geodesic_ratio": 1.0669483863381595,
+      "geodesic_path_length_on_plane_m": 5993743.5468232315,
+      "geodesic_path_samples": 2001
+    },
+    {
+      "from": {
+        "name": "Sydney",
+        "lat": -33.8688,
+        "lon": 151.2093,
+        "plane_x_m": 6622674.555417422,
+        "plane_y_m": 12051233.397737343,
+        "rho_m": 13751074.309802609
+      },
+      "to": {
+        "name": "Santiago",
+        "lat": -33.4489,
+        "lon": -70.6693,
+        "plane_x_m": -12931891.834359063,
+        "plane_y_m": -4536464.453142156,
+        "rho_m": 13704500.580108162
+      },
+      "geodesic_m": 11368984.480281316,
+      "initial_azimuth_deg": 145.3344889482079,
+      "final_azimuth_deg": 34.473739279309925,
+      "plane_straight_line_m": 25642402.123908915,
+      "plane_straight_line_m_via_PROJ": 25642402.12390892,
+      "plane_minus_geodesic_m": 14273417.643627599,
+      "plane_over_geodesic_ratio": 2.255469885492747,
+      "geodesic_path_length_on_plane_m": 39445631.038124345,
+      "geodesic_path_samples": 2001
+    },
+    {
+      "from": {
+        "name": "Tokyo",
+        "lat": 35.6762,
+        "lon": 139.6503,
+        "plane_x_m": 3918601.040300551,
+        "plane_y_m": 4612538.7615370555,
+        "rho_m": 6052350.61275587
+      },
+      "to": {
+        "name": "Los Angeles",
+        "lat": 34.0522,
+        "lon": -118.2437,
+        "plane_x_m": -5490488.291856039,
+        "plane_y_m": 2949367.8132642796,
+        "rho_m": 6232514.113977406
+      },
+      "geodesic_m": 8838470.245270794,
+      "initial_azimuth_deg": 55.49804333511755,
+      "final_azimuth_deg": 126.09284645667748,
+      "plane_straight_line_m": 9554951.57830125,
+      "plane_straight_line_m_via_PROJ": 9554951.578301251,
+      "plane_minus_geodesic_m": 716481.3330304548,
+      "plane_over_geodesic_ratio": 1.08106395260128,
+      "geodesic_path_length_on_plane_m": 9744317.209536796,
+      "geodesic_path_samples": 2001
+    },
+    {
+      "from": {
+        "name": "Johannesburg",
+        "lat": -26.2041,
+        "lon": 28.0473,
+        "plane_x_m": 6066248.158774596,
+        "plane_y_m": -11386267.01355703,
+        "rho_m": 12901412.4508851
+      },
+      "to": {
+        "name": "Perth",
+        "lat": -31.9505,
+        "lon": 115.8605,
+        "plane_x_m": 12182583.373197613,
+        "plane_y_m": 5905169.113894406,
+        "rho_m": 13538329.287936654
+      },
+      "geodesic_m": 8329278.614202093,
+      "initial_azimuth_deg": 118.50668067537075,
+      "final_azimuth_deg": 68.27250224999833,
+      "plane_straight_line_m": 18341300.930002857,
+      "plane_straight_line_m_via_PROJ": 18341300.93000286,
+      "plane_minus_geodesic_m": 10012022.315800764,
+      "plane_over_geodesic_ratio": 2.202027543985557,
+      "geodesic_path_length_on_plane_m": 21390847.41795621,
+      "geodesic_path_samples": 2001
+    },
+    {
+      "from": {
+        "name": "Reykjavik",
+        "lat": 64.1466,
+        "lon": -21.9426,
+        "plane_x_m": -1078347.0023418928,
+        "plane_y_m": -2676719.9654224026,
+        "rho_m": 2885768.880342058
+      },
+      "to": {
+        "name": "Anchorage",
+        "lat": 61.2181,
+        "lon": -149.9003,
+        "plane_x_m": -1610922.741181738,
+        "plane_y_m": 2779021.0928153107,
+        "rho_m": 3212169.0977233574
+      },
+      "geodesic_m": 5438984.492363827,
+      "initial_azimuth_deg": -30.33199904968406,
+      "final_azimuth_deg": -152.77746339537458,
+      "plane_straight_line_m": 5481673.778340112,
+      "plane_straight_line_m_via_PROJ": 5481673.778340115,
+      "plane_minus_geodesic_m": 42689.285976285115,
+      "plane_over_geodesic_ratio": 1.0078487603772763,
+      "geodesic_path_length_on_plane_m": 5485385.3083385145,
+      "geodesic_path_samples": 2001
+    },
+    {
+      "from": {
+        "name": "Cape Town",
+        "lat": -33.9249,
+        "lon": 18.4241,
+        "plane_x_m": 4347967.966586346,
+        "plane_y_m": -13052141.355556827,
+        "rho_m": 13757296.951214574
+      },
+      "to": {
+        "name": "Buenos Aires",
+        "lat": -34.6037,
+        "lon": -58.3816,
+        "plane_x_m": -11779264.88709878,
+        "plane_y_m": -7251867.638846803,
+        "rho_m": 13832594.316750266
+      },
+      "geodesic_m": 6884647.870684873,
+      "initial_azimuth_deg": -114.57716658843948,
+      "final_azimuth_deg": -66.45369485845387,
+      "plane_straight_line_m": 17138576.79930682,
+      "plane_straight_line_m_via_PROJ": 17138576.79930682,
+      "plane_minus_geodesic_m": 10253928.928621948,
+      "plane_over_geodesic_ratio": 2.4893904701043055,
+      "geodesic_path_length_on_plane_m": 19252041.96932364,
+      "geodesic_path_samples": 2001
+    }
+  ]
+}
