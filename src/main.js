@@ -7,7 +7,19 @@ const application = createStandaloneApplication({
   allowQaRegistration: import.meta.env.DEV,
 });
 
-application.start().catch((error) => {
+application
+  .start()
+  .then(async () => {
+    // Flat World mode: an additive, separately rendered view. Failure here never affects the globe.
+    try {
+      const { mountFlatWorld } = await import('./flatworld/index.js');
+      const { viewer, dataManager } = window.__godsEyeView || {};
+      if (viewer && dataManager) mountFlatWorld({ viewer, dataManager });
+    } catch (error) {
+      console.error('[FlatWorld] unavailable:', error);
+    }
+  })
+  .catch((error) => {
   console.error("God's Eye View initialization failed:", error);
   const loaderStatus = document.querySelector('#loading-screen .loader-status');
   loaderStatus.textContent = `Error: ${describeError(error)}`;

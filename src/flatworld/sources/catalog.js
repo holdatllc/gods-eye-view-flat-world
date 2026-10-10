@@ -1,0 +1,79 @@
+/**
+ * Data sources for the flat world. All are keyless and openly licensed or used under the same
+ * terms the globe already uses them with. Attribution strings are shown in the flat-world UI.
+ */
+import { geographicScheme, webMercatorScheme } from './tileSchemes.js';
+
+export const FLATWORLD_DATA_BASE = '/flatworld-data';
+export const LOCAL_GIBS_MAX_Z = 5;
+
+export const IMAGERY_SOURCES = Object.freeze({
+  esri: {
+    id: 'esri',
+    label: 'Esri World Imagery',
+    scheme: webMercatorScheme({ tileSize: 256, maxZoom: 19 }),
+    url: (z, x, y) =>
+      `https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`,
+    attribution: 'Imagery: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+    format: 'rgba',
+  },
+  gibsBlueMarble: {
+    id: 'gibsBlueMarble',
+    label: 'NASA Blue Marble Next Generation (GIBS)',
+    scheme: geographicScheme({ tileSize: 512, maxZoom: 7, rootSpanDeg: 288 }),
+    // Levels 0–5 stream from the local mirror (tools/flatworld/mirror_gibs.py); 6–7 from GIBS.
+    url: (z, x, y) =>
+      z <= LOCAL_GIBS_MAX_Z
+        ? `${FLATWORLD_DATA_BASE}/gibs/BlueMarble_NextGeneration/${z}/${x}/${y}.jpeg`
+        : `https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/BlueMarble_NextGeneration/default/2004-08-01/500m/${z}/${y}/${x}.jpeg`,
+    attribution: 'Polar imagery: NASA Earth Observatory Blue Marble NG via NASA GIBS (public domain)',
+    format: 'rgba',
+  },
+  gibsBlackMarble: {
+    id: 'gibsBlackMarble',
+    label: 'NASA Black Marble 2016 night lights (GIBS)',
+    // Night lights are only needed at regional scale: served entirely from the local mirror.
+    scheme: geographicScheme({ tileSize: 512, maxZoom: LOCAL_GIBS_MAX_Z, rootSpanDeg: 288 }),
+    url: (z, x, y) => `${FLATWORLD_DATA_BASE}/gibs/VIIRS_Black_Marble/${z}/${x}/${y}.png`,
+    attribution: 'Night lights: NASA Earth Observatory Black Marble 2016 (VIIRS) via NASA GIBS (public domain)',
+    format: 'rgba',
+  },
+});
+
+export const ELEVATION_SOURCES = Object.freeze({
+  mapterhorn: {
+    id: 'mapterhorn',
+    label: 'Mapterhorn terrain',
+    scheme: webMercatorScheme({ tileSize: 512, maxZoom: 15 }),
+    url: (z, x, y) => `https://tiles.mapterhorn.com/${z}/${x}/${y}.webp`,
+    attribution: 'Terrain: © Mapterhorn (Copernicus GLO-30 and national DEMs), CC BY 4.0',
+    format: 'terrarium',
+  },
+  etopo: {
+    id: 'etopo',
+    label: 'NOAA ETOPO 2022 (ice surface, bathymetry)',
+    // Local pyramid built by tools/flatworld/build_etopo_tiles.py: level 0 = 2×1 tiles of 180°.
+    scheme: geographicScheme({ tileSize: 256, maxZoom: 5, rootSpanDeg: 180 }),
+    url: (z, x, y) => `${FLATWORLD_DATA_BASE}/etopo/${z}/${x}/${y}.png`,
+    attribution: 'Bathymetry and polar ice surface: NOAA NCEI ETOPO 2022 (public domain)',
+    format: 'terrarium',
+  },
+});
+
+export const VECTOR_SOURCES = Object.freeze({
+  openfreemap: {
+    id: 'openfreemap',
+    label: 'OpenFreeMap (OpenStreetMap)',
+    tileJson: 'https://tiles.openfreemap.org/planet',
+    maxZoom: 14,
+    attribution: 'Buildings and roads: © OpenStreetMap contributors (ODbL) via OpenFreeMap / OpenMapTiles',
+  },
+});
+
+export function allAttributions() {
+  return [
+    ...Object.values(IMAGERY_SOURCES),
+    ...Object.values(ELEVATION_SOURCES),
+    ...Object.values(VECTOR_SOURCES),
+  ].map((s) => s.attribution);
+}
