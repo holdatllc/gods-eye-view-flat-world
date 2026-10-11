@@ -381,7 +381,7 @@ export class SkyBodies {
     const host = this.view.host || document.body;
     const css = document.createElement('style');
     css.textContent = `
-.fw-sky-panel{position:fixed;right:12px;bottom:12px;z-index:30;background:rgba(8,14,28,.82);color:#dfe9ff;font:12px/1.35 system-ui,sans-serif;padding:8px 10px;border-radius:8px;max-width:250px;backdrop-filter:blur(6px)}
+.fw-sky-panel{position:fixed;right:12px;bottom:70px;z-index:30;background:rgba(8,14,28,.82);color:#dfe9ff;font:12px/1.35 system-ui,sans-serif;padding:8px 10px;border-radius:8px;max-width:250px;backdrop-filter:blur(6px)}
 .fw-sky-panel b{display:block;margin-bottom:4px}
 .fw-sky-panel label{display:flex;align-items:center;gap:6px;margin:2px 0}
 .fw-sky-panel select{background:#14213d;color:#dfe9ff;border:1px solid #2c4170;border-radius:4px;font:inherit}
