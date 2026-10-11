@@ -155,6 +155,7 @@ export class SkyBodies {
     this.frame = frame;
     this.opts = {
       show: true,
+      cards: true,
       mode: 'coil',
       dayNight: 'A',
       bands: true,
@@ -257,9 +258,9 @@ export class SkyBodies {
   update(dt, view) {
     const now = performance.now();
     this.group.visible = this.opts.show;
-    if (this.dom) this.dom.style.display = this.opts.show ? '' : 'none';
     if (!this.opts.show) {
       this.cards.style.display = 'none';
+      this.corner.style.display = 'none';
       this._restoreNight();
       return;
     }
@@ -381,10 +382,10 @@ export class SkyBodies {
     const host = this.view.host || document.body;
     const css = document.createElement('style');
     css.textContent = `
-.fw-sky-panel{position:fixed;right:12px;bottom:70px;z-index:30;background:rgba(8,14,28,.82);color:#dfe9ff;font:12px/1.35 system-ui,sans-serif;padding:8px 10px;border-radius:8px;max-width:250px;backdrop-filter:blur(6px)}
+.fw-sky-panel{position:fixed;right:12px;bottom:70px;z-index:30;background:rgba(8,14,28,.82);color:#dfe9ff;font:12px/1.35 system-ui,sans-serif;padding:8px 10px;border-radius:8px;width:230px;box-sizing:border-box;backdrop-filter:blur(6px)}
 .fw-sky-panel b{display:block;margin-bottom:4px}
 .fw-sky-panel label{display:flex;align-items:center;gap:6px;margin:2px 0}
-.fw-sky-panel select{background:#14213d;color:#dfe9ff;border:1px solid #2c4170;border-radius:4px;font:inherit}
+.fw-sky-panel select{display:block;width:100%;margin:2px 0;background:#14213d;color:#dfe9ff;border:1px solid #2c4170;border-radius:4px;font:inherit}
 .fw-sky-panel small{display:block;margin-top:4px;color:#9fb4de}
 .fw-sky-corner{position:fixed;left:12px;bottom:12px;z-index:30;color:#ffd98a;font:12px system-ui,sans-serif;background:rgba(8,14,28,.7);padding:3px 8px;border-radius:6px;pointer-events:none}
 .fw-sky-cards{position:fixed;inset:0;pointer-events:none;z-index:29;overflow:hidden}
@@ -402,6 +403,8 @@ export class SkyBodies {
     this.dom = document.createElement('div');
     this.dom.className = 'fw-sky-panel';
     this.dom.innerHTML = `<b>Sun &amp; moon</b>
+<label><input type="checkbox" data-k="show"> show sun &amp; moon</label>
+<label><input type="checkbox" data-k="cards"> info cards</label>
 <label>Height <select data-k="mode">${HEIGHT_MODES.map(
       (m) => `<option value="${m}">${HEIGHT_LABEL[m]}</option>`,
     ).join('')}</select></label>
@@ -443,7 +446,8 @@ export class SkyBodies {
   }
 
   _updateCards(st, ks) {
-    this.cards.style.display = '';
+    this.cards.style.display = this.opts.cards ? '' : 'none';
+    this.corner.style.display = '';
     this.corner.textContent = this.opts.boost
       ? `size x${fmt(ks, ks < 2 ? 1 : 0)} for visibility (true diameter ${BODY_DIAMETER_KM} km)`
       : `true size (${BODY_DIAMETER_KM} km)`;
@@ -451,14 +455,15 @@ export class SkyBodies {
       'Position from real ephemeris; height is a model setting.';
     const sunPos = this._project(this.sun.position);
     const moonPos = this._project(this.moon.position);
-    const place = (el, s, html) => {
+    const near = sunPos && moonPos && Math.hypot(sunPos.x - moonPos.x, sunPos.y - moonPos.y) < 130;
+    const place = (el, s, html, dy = 0) => {
       if (!s) {
         el.style.display = 'none';
         return;
       }
       el.style.display = '';
       el.style.left = `${s.x}px`;
-      el.style.top = `${s.y}px`;
+      el.style.top = `${s.y + dy}px`;
       el.innerHTML = html;
     };
     const mode = HEIGHT_LABEL[this.opts.mode];
@@ -474,6 +479,7 @@ height ${fmt(st.sun.heightM / KM)} km, ${mode}<br>season: ${st.season}<i>${note}
       moonPos,
       `<b>Moon</b> ${latLon(st.moon.lat, st.moon.lon)}, ${fmt(st.moon.radiusM / KM)} km from the pole<br>
 height ${fmt(st.moon.heightM / KM)} km, ${mode}<br>phase: ${st.moon.phaseName} (${frac}% lit), season: ${st.season}<i>${note}</i>`,
+      near ? 150 : 0,
     );
   }
 }
