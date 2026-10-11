@@ -157,7 +157,7 @@ export function createIceField(overrides = {}, { boundaryRadius }) {
    * Height and surface attributes at local XY (metres, display frame).
    * Returns { height, rock, blueIce, crevasse, snow } with the material weights in [0, 1].
    */
-  function sample(x, y) {
+  function sample(x, y, detailM = 0) {
     const r = Math.hypot(x, y);
     const beyond = r - boundaryRadius;
     const t = smoothstep(0, p.transitionM, beyond);
@@ -223,7 +223,10 @@ export function createIceField(overrides = {}, { boundaryRadius }) {
           smoothstep(-0.2, 0.3, fbm(x / 15000, y / 15000, s + 29, 3))
         : 0;
     const crevasse = crevasseAt(x, y, crevasseZone);
-    h -= t * crevasse * p.crevasseDepthM;
+    // Cracks are only metres wide: carve them into the mesh only when the vertex spacing can
+    // resolve them (otherwise sparse vertices would turn them into random pits); coarser
+    // meshes show them in the surface texture instead.
+    if (detailM > 0 && detailM <= 3) h -= t * crevasse * p.crevasseDepthM;
 
     const relief = Math.max(
       0,
@@ -247,18 +250,32 @@ export function createIceField(overrides = {}, { boundaryRadius }) {
   }
 
   /** Crevasse intensity (0–1) at a point, given the zone strength from `sample`. */
+  /**
+   * Crevasse intensity (0–1) at a point, given the zone strength from `sample`. Crevasses are
+   * transverse cracks: parallel, a few metres wide, tens of metres apart, broken into finite
+   * segments and bent by a slow warp, across the local flow direction.
+   */
   function crevasseAt(x, y, zone) {
     if (!(zone > 0.05)) return 0;
     const ang = 2.4 * fbm(x / 60000, y / 60000, s + 33, 2);
     const ca = Math.cos(ang);
     const sa = Math.sin(ang);
-    const jitter = 0.35 * gradientNoise(x / 90, y / 90, s + 35);
-    const u = (x * ca + y * sa) / 38 + jitter;
-    const v = (-x * sa + y * ca) / 260;
-    const { f1, f2 } = worley(u, v, s + 37);
-    return (
-      Math.min(1, zone) * p.crevasseDensity * smoothstep(0.11, 0.0, f2 - f1)
+    const along = x * ca + y * sa; // metres along the flow
+    const across = -x * sa + y * ca; // metres across it
+    const spacing = 38 * (1 + 0.35 * gradientNoise(x / 3000, y / 3000, s + 34));
+    const warp = 0.6 * gradientNoise(across / 180, along / 900, s + 35);
+    const u = along / spacing + warp;
+    const i = Math.floor(u);
+    const d = Math.abs(u - i - 0.5) * spacing; // metres from this crack's centre line
+    const width = 2 + 3 * hashUnit(i, 17, s + 36);
+    const crack = smoothstep(width, width * 0.25, d);
+    if (crack <= 0) return 0;
+    const segment = smoothstep(
+      0.0,
+      0.3,
+      gradientNoise(i * 0.37 + 11.3, across / 260, s + 39),
     );
+    return Math.min(1, zone) * p.crevasseDensity * crack * segment;
   }
 
   return { params: p, sample, crevasseAt };

@@ -2,8 +2,10 @@
  * Flat World mode for God's Eye View: a North-Pole-centred azimuthal-equidistant 3D world with a
  * deterministic procedural ice domain beyond the South-Pole circle.
  *
- * Mounted after the standalone application starts. It reads the existing viewer and data manager
- * and never modifies the globe's renderer, layers or sources.
+ * Mounted after the standalone application starts. Only the FLAT WORLD button is created up
+ * front: the renderer, workers and layers are built the first time the flat world is opened, so
+ * a globe-only session pays nothing. It reads the existing viewer and data manager and never
+ * modifies the globe's renderer, layers or sources.
  */
 import * as THREE from 'three';
 import { FlatWorldView } from './render/flatWorldView.js';
@@ -18,103 +20,164 @@ import {
   DOMAIN_GPS,
   DOMAIN_ICE,
 } from './projection/domains.js';
-import { allAttributions } from './sources/catalog.js';
+import { allAttributions, attributionHtml } from './sources/catalog.js';
 import { installStyles } from './ui/styles.js';
 import { createPanel } from './ui/panel.js';
 
+function createToggle() {
+  const toggle = document.createElement('button');
+  toggle.className = 'fw-toggle';
+  toggle.type = 'button';
+  toggle.title = 'Switch between the globe and the flat world';
+  toggle.innerHTML =
+    '<span class="fw-disc"></span><span class="fw-toggle-label">FLAT WORLD</span>';
+  document.body.appendChild(toggle);
+  return toggle;
+}
+
+/** Wait until the globe camera has stopped moving (e.g. a share link's restore flight). */
+function whenCameraSettles(viewer, { maxMs = 9000, quietMs = 600 } = {}) {
+  return new Promise((resolve) => {
+    const start = performance.now();
+    let last = viewer.camera.positionWC.clone();
+    let quietSince = performance.now();
+    const check = () => {
+      const p = viewer.camera.positionWC;
+      const moved = Math.hypot(p.x - last.x, p.y - last.y, p.z - last.z);
+      last = p.clone();
+      const now = performance.now();
+      if (moved > 0.5) quietSince = now;
+      if (now - quietSince >= quietMs || now - start >= maxMs) resolve();
+      else setTimeout(check, 150);
+    };
+    setTimeout(check, 150);
+  });
+}
+
 export function mountFlatWorld({ viewer, dataManager }) {
   installStyles();
-  const host = document.createElement('div');
-  host.id = 'flatworld-root';
-  viewer.container.insertAdjacentElement('afterend', host);
+  const toggle = createToggle();
+  let world = null;
 
-  const frame = createWorldFrame();
-  const view = new FlatWorldView({ host, frame });
-  const live = new LiveOverlay({ dataManager, frame });
-  view.addLayer(live);
-  const vectors = new VectorLines({ frame });
-  view.addLayer(vectors);
-  const ice = new IceEnvironment({ frame });
-  view.addLayer(ice);
-  const routes = new RouteLayer({ frame });
-  view.addLayer(routes);
-  const buildings = new BuildingsLayer({ frame });
-  view.addLayer(buildings);
+  function build() {
+    if (world) return world;
+    const host = document.createElement('div');
+    host.id = 'flatworld-root';
+    viewer.container.insertAdjacentElement('afterend', host);
 
-  const mode = new FlatWorldMode({
-    viewer,
-    view,
-    live,
-    onChange: (active) => panel.setActive(active),
-  });
+    const frame = createWorldFrame();
+    const view = new FlatWorldView({ host, frame });
+    const live = new LiveOverlay({ dataManager, frame });
+    view.addLayer(live);
+    const vectors = new VectorLines({ frame });
+    view.addLayer(vectors);
+    const ice = new IceEnvironment({ frame });
+    view.addLayer(ice);
+    const routes = new RouteLayer({ frame });
+    view.addLayer(routes);
+    const buildings = new BuildingsLayer({ frame });
+    view.addLayer(buildings);
 
-  const panel = createPanel({
-    view,
-    mode,
-    live,
-    vectors,
-    ice,
-    routes,
-    buildings,
-    frame,
-    attributions: allAttributions(),
-  });
+    // Always-visible attribution for the data on screen (the globe's credit bar is hidden).
+    const credits = document.createElement('div');
+    credits.className = 'fw-credits';
+    credits.innerHTML = attributionHtml();
+    host.appendChild(credits);
 
-  // Picking: click selects a live object to track; hover reports the domain under the cursor.
-  const raycaster = new THREE.Raycaster();
-  let down = null;
-  view.canvas.addEventListener('pointerdown', (e) => {
-    down = { x: e.clientX, y: e.clientY };
-  });
-  view.canvas.addEventListener('pointerup', (e) => {
-    if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4) return;
-    const rect = view.canvas.getBoundingClientRect();
-    raycaster.setFromCamera(
-      new THREE.Vector2(
-        ((e.clientX - rect.left) / rect.width) * 2 - 1,
-        -((e.clientY - rect.top) / rect.height) * 2 + 1,
-      ),
-      view.camera,
-    );
-    const rec = live.pick(raycaster);
-    if (rec) {
-      live.track(rec.kind, rec.id);
-      panel.showTracked(rec);
-      return;
-    }
-    const p = view.pick(e.clientX, e.clientY);
-    if (p && routes.measuring) routes.addPoint(p);
-  });
-  let hoverPending = false;
-  view.canvas.addEventListener('pointermove', (e) => {
-    if (hoverPending) return;
-    hoverPending = true;
-    requestAnimationFrame(() => {
-      hoverPending = false;
-      panel.showCursor(view.pick(e.clientX, e.clientY));
+    const mode = new FlatWorldMode({
+      viewer,
+      view,
+      live,
+      onChange: (active) => panel.setActive(active),
     });
-  });
+    // Moving the camera yourself ends tracking (the camera would otherwise snap back).
+    view.controls.onUserInput = () => live.stopTracking();
+
+    const panel = createPanel({
+      view,
+      mode,
+      live,
+      vectors,
+      ice,
+      routes,
+      buildings,
+      frame,
+      attributions: allAttributions(),
+      toggle,
+    });
+
+    // Picking: click selects a live object to track, or adds a route point while measuring.
+    const raycaster = new THREE.Raycaster();
+    let down = null;
+    view.canvas.addEventListener('pointerdown', (e) => {
+      down = { x: e.clientX, y: e.clientY };
+    });
+    view.canvas.addEventListener('pointerup', (e) => {
+      if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4)
+        return;
+      const rect = view.canvas.getBoundingClientRect();
+      raycaster.setFromCamera(
+        new THREE.Vector2(
+          ((e.clientX - rect.left) / rect.width) * 2 - 1,
+          -((e.clientY - rect.top) / rect.height) * 2 + 1,
+        ),
+        view.camera,
+      );
+      if (!routes.measuring) {
+        const rec = live.pick(raycaster);
+        if (rec) {
+          live.track(rec.kind, rec.id);
+          panel.showTracked(rec);
+          return;
+        }
+      }
+      const p = view.pick(e.clientX, e.clientY);
+      if (p && routes.measuring) routes.addPoint(p);
+    });
+    let hoverPending = false;
+    view.canvas.addEventListener('pointermove', (e) => {
+      if (hoverPending) return;
+      hoverPending = true;
+      requestAnimationFrame(() => {
+        hoverPending = false;
+        panel.showCursor(view.pick(e.clientX, e.clientY));
+      });
+    });
+
+    world = { view, mode, live, vectors, ice, routes, buildings, frame, panel };
+    Object.assign(api, world, {
+      diagnostics: () => view.diagnostics(),
+      verifyLive: () => live.verify(),
+    });
+    return world;
+  }
 
   const api = {
-    view,
-    mode,
-    live,
-    vectors,
-    ice,
-    routes,
-    buildings,
-    frame,
-    panel,
-    enter: () => mode.enter(),
-    exit: () => mode.exit(),
-    toggle: () => mode.toggle(),
-    diagnostics: () => view.diagnostics(),
-    verifyLive: () => live.verify(),
+    // Placeholder until the world is built on first use (replaced by the real mode).
+    mode: { active: false },
+    enter: () => build().mode.enter(),
+    exit: () => world?.mode.exit(),
+    toggle: () => build().mode.toggle(),
     domains: { DOMAIN_GPS, DOMAIN_ICE },
+    get built() {
+      return Boolean(world);
+    },
   };
+  toggle.addEventListener('click', () => api.toggle());
   window.__flatWorld = api;
-  // Deep link: #...&fw=1 opens straight into the flat world.
-  if (new URLSearchParams(location.search).get('fw') === '1')
-    setTimeout(() => mode.enter(), 0);
+
+  // Deep link ?fw=1: consume the parameter (so later share links don't carry it) and open the
+  // flat world once any shared-view camera restore has finished.
+  const params = new URLSearchParams(location.search);
+  if (params.get('fw') === '1') {
+    params.delete('fw');
+    const search = params.toString();
+    history.replaceState(
+      history.state,
+      '',
+      `${location.pathname}${search ? `?${search}` : ''}${location.hash}`,
+    );
+    whenCameraSettles(viewer).then(() => api.enter());
+  }
   return api;
 }

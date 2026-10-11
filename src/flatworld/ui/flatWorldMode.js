@@ -6,6 +6,7 @@
  */
 import * as Cesium from 'cesium';
 import { DOMAIN_GPS } from '../projection/domains.js';
+import { ensureGeoidReady, geoidHeight } from '../../data/geoid.js';
 
 export class FlatWorldMode {
   constructor({ viewer, view, live = null, onChange = () => {} }) {
@@ -76,6 +77,12 @@ export class FlatWorldMode {
     // from an earlier flat-world session must not pull the camera away (review D1).
     this.viewer.camera.cancelFlight?.();
     this.live?.stopTracking();
+    this.view.controls.animation = null; // a flat-world flight left running last time is over
+    // Flat-world heights are above sea level; the globe's are above the ellipsoid. Load the
+    // geoid now so leaving can convert (h = H + N).
+    ensureGeoidReady()
+      .then(() => (this.geoidReady = true))
+      .catch(() => {});
     const globe = this.readGlobe();
     this.savedGlobe = globe.saved;
     const pitch = Math.min(globe.focus.pitchDeg, -5);
@@ -96,8 +103,37 @@ export class FlatWorldMode {
     document.body.classList.add('flatworld-active');
     this.view.setActive(true);
     this.active = true;
+    this.lastSyncedPosition = Cesium.Cartesian3.clone(
+      this.viewer.camera.positionWC,
+    );
     this.syncTimer = setInterval(() => this.syncHiddenGlobe(), 2000);
+    this.followTimer = setInterval(() => this.followGlobeRequests(), 400);
     this.onChange(true);
+  }
+
+  /**
+   * The app's own navigation (location search, city pills, voice commands, reset-view buttons)
+   * still moves the hidden globe camera. Finish any such flight at once and carry the flat world
+   * to the same place, so those controls keep working while the flat world is shown.
+   */
+  followGlobeRequests() {
+    if (!this.active) return;
+    const camera = this.viewer.camera;
+    if (camera._currentFlight) camera.completeFlight();
+    const p = camera.positionWC;
+    const q = this.lastSyncedPosition;
+    if (!q) return;
+    const moved = Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z);
+    if (moved < 500) return;
+    const globe = this.readGlobe();
+    this.lastSyncedPosition = Cesium.Cartesian3.clone(p);
+    this.live?.stopTracking();
+    this.view.lookAtGeodetic({
+      ...globe.focus,
+      range: Math.min(globe.focus.range, 5.4e7),
+      pitchDeg: Math.min(globe.focus.pitchDeg, -5),
+      animate: true,
+    });
   }
 
   /** Keep the hidden globe camera over the flat-world focus so live feeds query this region. */
@@ -113,6 +149,10 @@ export class FlatWorldMode {
       ),
       orientation: { heading: 0, pitch: -Math.PI / 2, roll: 0 },
     });
+    // Our own moves of the hidden camera are not navigation requests to follow.
+    this.lastSyncedPosition = Cesium.Cartesian3.clone(
+      this.viewer.camera.positionWC,
+    );
   }
 
   /**
@@ -123,19 +163,40 @@ export class FlatWorldMode {
   exit() {
     if (!this.active) return;
     clearInterval(this.syncTimer);
+    clearInterval(this.followTimer);
+    const trackedHeight = this.live?.tracked
+      ? this.view.controls.targetHeightLock
+      : null;
     this.live?.stopTracking();
+    const flatAnimation = this.view.controls.animation;
+    if (flatAnimation) {
+      // Leaving mid-flight: settle at the destination now instead of resuming it next time.
+      this.view.controls.update(flatAnimation.duration * 2);
+      this.view.controls.animation = null;
+    }
     this.viewer.camera.cancelFlight?.();
     const f = this.view.getFocus();
     const camera = this.viewer.camera;
     const c = this.view.controls;
     let synced = false;
+    const undulation = (lat, lon) => {
+      if (!this.geoidReady) return 0;
+      try {
+        return geoidHeight(lat, lon);
+      } catch {
+        return 0;
+      }
+    };
     const eye = this.view.camera.position;
     const eyeDomain = this.view.frame.worldToDomain(eye.x, -eye.z);
     if (c.mode !== 'orbit' && eyeDomain.domain === DOMAIN_GPS) {
       // Fly/walk: put the globe camera at the same eye point, looking the same way (review D9).
       const e = this.view.chunks.exaggeration;
       const ground = this.view.chunks.heightAt(eye.x, -eye.z) ?? 0;
-      const height = Math.max(eye.y - ground + ground / e, 2);
+      const height = Math.max(
+        eye.y - ground + ground / e + undulation(eyeDomain.lat, eyeDomain.lon),
+        2,
+      );
       camera.setView({
         destination: Cesium.Cartesian3.fromDegrees(
           eyeDomain.lon,
@@ -159,10 +220,13 @@ export class FlatWorldMode {
         c.mode !== this.entryFocus.mode;
       if (moved) {
         const e = this.view.chunks.exaggeration;
+        // Orbit pivot height: the tracked aircraft's if exit happened while tracking, else the
+        // ground; converted from sea level to the ellipsoid for the globe.
+        const pivot = (trackedHeight ?? f.ground ?? 0) / e;
         const target = Cesium.Cartesian3.fromDegrees(
           f.domain.lon,
           f.domain.lat,
-          (f.ground || 0) / e,
+          pivot + undulation(f.domain.lat, f.domain.lon),
         );
         const range = Math.max(
           c.mode === 'orbit' ? c.distance : f.altitude,

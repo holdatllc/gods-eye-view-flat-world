@@ -245,7 +245,8 @@ export class IceEnvironment {
           const size = 9 + 14 * hashUnit(ix, iy, seed + 74);
           cave.scale.setScalar(size);
           // Face downhill: the mouth opens toward the lower ground.
-          cave.rotation.y = Math.atan2(hx, hy);
+          // The mouth (local +Z) faces downhill: plane direction (−hx, −hy) is three.js (−hx, 0, hy).
+          cave.rotation.y = Math.atan2(-hx, hy);
           cave.userData = { x, y, height: h0.height, size };
           this.caves.set(key, cave);
           this.group.add(cave);

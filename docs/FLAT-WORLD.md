@@ -30,6 +30,33 @@ true geodesic, and everything beyond the South-Pole circle is labelled as hypoth
 - **SAVED LOCATIONS**: bookmark real places (lat/lon) or ice places (local X/Y);
   **RETURN TO LAST REAL PLACE** brings you back from the ice.
 
+## Behaviour worth knowing
+
+- **Built on first use.** Until FLAT WORLD is opened, only the button exists: no second WebGL
+  context, workers or downloads. `?fw=1` opens it after any shared-view restore has finished and
+  is removed from the address bar so later share links open the globe normally.
+- **Globe navigation still works.** Location search, city pills, voice commands and the reset
+  buttons move the (hidden) globe camera; the flat world follows them to the same place.
+- **Globe shortcuts are paused** while the flat world is shown, so FLY/WALK keys (Space, D, …) do
+  not trigger the globe's push-to-talk or detection-mode cycling.
+- **Live aircraft are drawn between their two latest real fixes**, one feed interval behind real
+  time, so every drawn position is traceable to source fixes. The globe extrapolates ahead
+  instead, so the same aircraft can sit a few kilometres apart in the two views. Steps that are
+  implausible for the reported course and speed (stale, out-of-order or cross-feed fixes) snap to
+  the latest fix rather than animating backwards. Grounded aircraft sit on the terrain.
+- **Heights:** terrain heights are orthometric (above sea level); aircraft use their reported
+  barometric altitude, which is also referenced to sea level. The globe renders aircraft at
+  ellipsoidal heights, so heights differ by the geoid undulation (tens of metres).
+- **Satellites are drawn at their real height** (400 km for the ISS, 36,000 km for geostationary
+  satellites). Seen from far above the North Pole, perspective places high orbits outside the
+  disc on screen; their ground points are always inside it. LIVE DATA → SATELLITES: GROUND POINT
+  draws them on the point beneath each satellite instead.
+- **Ships** need `AISSTREAM_API_KEY`; without it the panel says so.
+- **Shadows** are switched off more than ~30,000 km from the disc centre (float32 shadow-map
+  precision); terrain shading continues.
+- **Data status** in the panel reports missing or failing tiles; chunks built during a temporary
+  outage are rebuilt automatically.
+
 Developer handle: `window.__flatWorld` (`enter`, `exit`, `view`, `frame`, `live`, `routes`, `ice`,
 `diagnostics()`, `verifyLive()`).
 
@@ -57,7 +84,7 @@ src/flatworld/
   ice/iceEnvironment.js    polar weather, ice caves, dramatic-vista finder
   buildings/*              OpenStreetMap buildings and roads (OpenFreeMap vector tiles)
   ui/*                     mode switch, panel, styles
-server/standalone/flatworldData.js   serves local tiles at /flatworld-data
+server/providers/flatworldData.js    serves local tiles at /flatworld-data (read-only, no traversal)
 ```
 
 **Polar rendering adapter.** CesiumJS's scene modes (3D, 2D, Columbus) cannot show an
@@ -87,8 +114,10 @@ invisible when crossed.
 ## Verification
 
 - `npm test` includes the flat-world unit tests (projection, domains, chunk builder, routes).
-- `tools/flatworld/verify_aeqd.py` compares the projection with PROJ 9.8 over 1.3 M points
-  (forward 9.3e-9 m, inverse 1.1e-13°) and checks the domain split adversarially.
+- `tools/flatworld/verify_aeqd.py` (in this repo) compares the projection with PROJ 9.8 over
+  1.3 M points (forward 9.3e-9 m, inverse 1.1e-13°) and checks the domain split adversarially.
 - `tools/flatworld/ice_determinism.mjs` hashes ice chunks; two runs must match.
+- `tools/flatworld/build_etopo_tiles.py` and `tools/flatworld/mirror_gibs.py` rebuild the local
+  data (see `tools/flatworld/README.md`).
 - `scripts/flatworld-shot.mjs <spec.json>` drives Chrome for browser evidence (see
   `program/evidence/*/*.json` in the program folder).

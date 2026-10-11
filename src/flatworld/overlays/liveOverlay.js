@@ -99,6 +99,10 @@ export class LiveOverlay {
     this.labels = null;
     this.drawScale = 1;
     this.motion = 'interpolated';
+    /** Off by default: satellites at their real height. On: at their sub-satellite ground point. */
+    this.satelliteGroundPoints = false;
+    /** Called with the tracked record (or null) whenever tracking starts or ends. */
+    this.onTrackingChange = () => {};
     const geos = {
       flights: aircraftGeometry(),
       military: aircraftGeometry(),
@@ -233,6 +237,20 @@ export class LiveOverlay {
     return Boolean(this.dataManager?.isEffectivelyEnabled?.(KINDS[kind].layer));
   }
 
+  /** The layer's own reported problem (e.g. a missing provider key), or null. */
+  layerError(kind) {
+    try {
+      const st = this._module(KINDS[kind].layer)?.getStats?.();
+      if (!st) return null;
+      if (st.error) return String(st.error).replace(/_/g, ' ');
+      if (st.status === 'unavailable') return 'unavailable';
+      if (st.stale) return 'feed is stale';
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
   toggleLayer(kind) {
     return this.dataManager?.toggle?.(KINDS[kind].layer, { origin: 'user' });
   }
@@ -281,6 +299,7 @@ export class LiveOverlay {
           [a.heading, a.courseDeg, a.cog, a.trueTrack].find(Number.isFinite) ??
           null,
         speedMps: a.speedMps ?? null,
+        onGround: a.onGround === true,
         source: mod.source ?? null,
       });
     }
@@ -294,6 +313,10 @@ export class LiveOverlay {
    */
   poll() {
     const now = Date.now();
+    // After a pause (flat world hidden, tab in background) the previous fix is history, not the
+    // start of a segment to animate along: start again from the latest fix.
+    const resume = this._lastPollMs && now - this._lastPollMs > 30000;
+    this._lastPollMs = now;
     for (const kind of Object.keys(KINDS)) {
       if (!this.enabled[kind]) {
         this.records[kind] = [];
@@ -308,6 +331,8 @@ export class LiveOverlay {
         if (!r) {
           r = { kind, id: row.id, fixes: [] };
         }
+        if (resume || (r.source && row.source && r.source !== row.source))
+          r.fixes.length = 0;
         const last = r.fixes[r.fixes.length - 1];
         if (
           !last ||
@@ -315,25 +340,41 @@ export class LiveOverlay {
           last.lon !== row.lon ||
           last.altitudeM !== row.altitudeM
         ) {
-          r.fixes.push({
+          const fix = {
             lat: row.lat,
             lon: row.lon,
             altitudeM: row.altitudeM,
             t: now,
-          });
+          };
+          // Fixes are only animated when the step is plausible for the reported course and
+          // speed; stale, out-of-order or cross-feed fixes snap instead of flying backwards.
+          if (last && kind !== 'satellites' && !plausibleStep(last, fix, row))
+            r.fixes.length = 0;
+          r.fixes.push(fix);
           if (r.fixes.length > 2) r.fixes.shift();
+          r.lastFixMs = now;
         }
         Object.assign(r, {
           label: row.label,
           heading: row.heading,
           speedMps: row.speedMps,
           source: row.source,
+          onGround: row.onGround,
         });
         byId.set(row.id, r);
         next.push(r);
       }
       (this._byId ||= {})[kind] = byId;
       this.records[kind] = next;
+    }
+    // A tracked contact that disappears (layer switched off, contact dropped by the feed) ends
+    // tracking instead of leaving a frozen label and a locked camera.
+    if (this.tracked) {
+      const still = this._byId?.[this.tracked.kind]?.get(this.tracked.id);
+      if (!still || !this.isLayerOn(this.tracked.kind)) {
+        this._trackMisses = (this._trackMisses || 0) + 1;
+        if (this._trackMisses >= 2) this.stopTracking();
+      } else this._trackMisses = 0;
     }
   }
 
@@ -395,7 +436,18 @@ export class LiveOverlay {
         const w = this.frame.geodeticToWorld(r.lat, r.lon, r.altitudeM);
         if (!w) continue;
         r.world = w;
-        const y = r.altitudeM * e;
+        if (r.onGround && kind !== 'satellites') {
+          // Grounded: on the rendered terrain (airports can be 1–4 km above sea level).
+          const g = view.chunks.heightAt(w.x, w.y);
+          if (g !== null) r.altitudeM = g / e;
+        }
+        // Satellites are drawn at their true orbital height (default). The optional ground mode
+        // puts each on the point directly beneath it instead.
+        const y =
+          kind === 'satellites' && this.satelliteGroundPoints
+            ? (view.chunks.heightAt(w.x, w.y) ?? 0) + 1500 * e
+            : r.altitudeM * e;
+        r.drawnHeightM = y / e;
         p.set(w.x, y, -w.y);
         // Visual heading corrected for the projection's anisotropic scale.
         let yaw = 0;
@@ -432,6 +484,9 @@ export class LiveOverlay {
       }
       mesh.count = i;
       mesh.instanceMatrix.needsUpdate = true;
+      // Raycasting culls against the bounding sphere; recompute it lazily from the current
+      // instances (it would otherwise stay empty if the layer had no data on the first frame).
+      mesh.boundingSphere = null;
     }
     this.stalkGeometry.setDrawRange(0, stalkCount * 2);
     this.stalkGeometry.attributes.position.needsUpdate = true;
@@ -446,6 +501,7 @@ export class LiveOverlay {
     this.tracked = { kind, id };
     this.groundTrack.visible = this.orbitPath.visible = false;
     if (kind === 'satellites') this._buildSatelliteTrack(id);
+    this.onTrackingChange(this._find(kind, id));
     const r = this._find(kind, id);
     if (r && this.view) {
       const w = this.frame.geodeticToWorld(r.lat, r.lon);
@@ -464,7 +520,9 @@ export class LiveOverlay {
   }
 
   stopTracking() {
+    const was = this.tracked;
     this.tracked = null;
+    if (was) this.onTrackingChange(null);
     if (this.view) this.view.controls.targetHeightLock = null;
     this.groundTrack.visible = this.orbitPath.visible = false;
     this.trackMarker.visible = false;
@@ -566,7 +624,7 @@ export class LiveOverlay {
         result.maxLonErrDeg = Math.max(result.maxLonErrDeg, dLon);
         result.maxAltErrM = Math.max(
           result.maxAltErrM,
-          Math.abs(d.height - r.altitudeM),
+          Math.abs(d.height - (r.drawnHeightM ?? r.altitudeM)),
         );
         const f = r.fixes;
         const a = f[0];
@@ -596,6 +654,16 @@ export class LiveOverlay {
       result.byKind[kind] = n;
       result.checked += n;
     }
+    // Nothing drawn means nothing was verified: say so rather than reporting a clean pass.
+    result.status =
+      result.checked === 0
+        ? 'not_run'
+        : result.offSegment ||
+            result.outOfDomain ||
+            result.maxLatErrDeg > 1e-9 ||
+            result.maxLonErrDeg > 1e-9
+          ? 'fail'
+          : 'pass';
     return result;
   }
 
@@ -604,6 +672,36 @@ export class LiveOverlay {
     this.trackLines.removeFromParent();
     this.labels?.remove();
   }
+}
+
+/**
+ * Whether moving from fix `a` to fix `b` is a believable forward step for a contact reporting
+ * `row.heading` and `row.speedMps`: not against its course and not faster than it can fly.
+ */
+export function plausibleStep(a, b, row) {
+  const DEG = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * DEG;
+  let dLon = (b.lon - a.lon) % 360;
+  if (dLon > 180) dLon -= 360;
+  if (dLon < -180) dLon += 360;
+  dLon *= DEG;
+  const north = dLat * 6371000;
+  const east = dLon * 6371000 * Math.cos(((a.lat + b.lat) / 2) * DEG);
+  const dist = Math.hypot(north, east);
+  if (dist < 1) return true;
+  if (Number.isFinite(row.heading) && dist > 200) {
+    const h = row.heading * DEG;
+    const along = (north * Math.cos(h) + east * Math.sin(h)) / dist;
+    if (along < -0.2) return false; // moving against its own reported course
+  }
+  const dtS = Math.max((b.t - a.t) / 1000, 1);
+  if (
+    Number.isFinite(row.speedMps) &&
+    row.speedMps > 0 &&
+    dist > 3 * row.speedMps * dtS + 5000
+  )
+    return false;
+  return true;
 }
 
 function escapeHtml(s) {

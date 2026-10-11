@@ -17,11 +17,26 @@ body:not(.flatworld-active) .flatworld-labels { display: none; }
   color: #e9fbff; background: rgba(4, 16, 24, 0.78); border: 1px solid rgba(57, 225, 255, 0.55);
   padding: 3px 7px; border-radius: 4px; white-space: nowrap; letter-spacing: 0.04em; }
 .flatworld-label span { display: block; font-weight: 400; color: #8fd8ea; font-size: 10px; }
-.fw-toggle { position: fixed; top: 58px; left: 50%; transform: translateX(-50%); z-index: 60;
+.fw-toggle { position: fixed; top: 102px; left: 50%; transform: translateX(-50%); z-index: 60;
   font: 600 11px ui-monospace, 'SF Mono', Menlo, monospace; letter-spacing: 0.14em; color: #bff4ff;
   background: rgba(6, 18, 26, 0.82); border: 1px solid rgba(57, 225, 255, 0.5); border-radius: 18px;
   padding: 7px 14px 7px 10px; cursor: pointer; display: flex; align-items: center; gap: 8px; backdrop-filter: blur(6px); }
 .fw-toggle:hover { border-color: #39e1ff; color: #fff; }
+/* Upstream chrome-free modes (clean view, recordings, cockpit) hide the flat-world button too. */
+body.ui-clean-view .fw-toggle, body.recording-mode .fw-toggle, body.cockpit-mode .fw-toggle { display: none; }
+@media (max-width: 720px) {
+  .fw-toggle { top: auto; bottom: 132px; left: 12px; transform: none; z-index: 70; }
+  .fw-panel { width: calc(100vw - 28px); max-height: 45vh; top: auto; bottom: 180px; }
+}
+/* Globe-only controls that have no meaning in the flat world. */
+body.flatworld-active #view-switcher { display: none !important; }
+.fw-credits { position: absolute; right: 12px; bottom: 54px; max-width: min(520px, calc(100vw - 330px)); z-index: 2;
+  font: 9px/1.35 ui-monospace, 'SF Mono', Menlo, monospace; color: #9fc3cf; background: rgba(4, 14, 20, 0.62);
+  padding: 3px 7px; border-radius: 4px; pointer-events: auto; text-align: right; }
+.fw-credits a { color: #bfe9f5; text-decoration: none; }
+.fw-credits a:hover { text-decoration: underline; }
+body:not(.flatworld-active) .fw-credits { display: none; }
+.fw-subtitle { margin: 8px 0 3px; font-size: 10px; letter-spacing: 0.16em; color: #39e1ff; }
 .fw-toggle .fw-disc { width: 16px; height: 16px; border-radius: 50%;
   background: radial-gradient(circle, #0c3f5c 0 30%, #2a8f6a 31% 55%, #e8f4ff 56% 100%); box-shadow: 0 0 6px #39e1ff88; }
 .fw-panel { position: fixed; left: 14px; top: 96px; width: 286px; max-height: calc(100vh - 190px); overflow: auto; z-index: 55;
@@ -31,8 +46,8 @@ body.flatworld-active .fw-panel { display: block; }
 body.flatworld-active #left-panel-stack { display: none !important; }
 .fw-panel h3 { margin: 10px 0 5px; font-size: 10px; letter-spacing: 0.16em; color: #39e1ff; font-weight: 600; }
 .fw-panel h3:first-child { margin-top: 0; }
-.fw-panel h3 { cursor: pointer; user-select: none; }
-.fw-panel h3::after { content: ' ▾'; color: #4d8fa0; }
+.fw-panel h3.fw-section-title { cursor: pointer; user-select: none; }
+.fw-panel h3.fw-section-title::after { content: ' ▾'; color: #4d8fa0; }
 .fw-section.collapsed > h3::after { content: ' ▸'; }
 .fw-section.collapsed > :not(h3) { display: none !important; }
 .fw-row { display: flex; gap: 5px; flex-wrap: wrap; margin: 3px 0; }

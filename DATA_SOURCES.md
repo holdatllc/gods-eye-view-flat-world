@@ -335,6 +335,25 @@ NOAA density imagery with the raw GLM product.
 
 ---
 
+## Flat world sources
+
+The flat world (`docs/FLAT-WORLD.md`) reprojects these keyless sources per chunk. Its credit line
+is shown at the bottom right of the flat view whenever it is open.
+
+| Source | Use | Access | Terms |
+|--------|-----|--------|-------|
+| Esri World Imagery (`services.` / `server.arcgisonline.com`) | Imagery to ±85° | Live tiles (same keyless service as the globe; requests are spread over both hostnames because the service is HTTP/1.1) | Esri terms of use; "Powered by Esri" and the Esri, Maxar, Earthstar Geographics, GIS User Community credit |
+| Mapterhorn (`tiles.mapterhorn.com`) | Land elevation and land/sea mask to ±85° | Live Terrarium tiles | CC BY 4.0, https://mapterhorn.com/attribution |
+| NOAA NCEI ETOPO 2022 60″ ice surface | Bathymetry, polar ice surface, coarse global elevation | Downloaded once, served locally from `/flatworld-data/etopo` (`tools/flatworld/build_etopo_tiles.py`) | Public domain (US Government) |
+| NASA GIBS Blue Marble Next Generation (2004-08) | Antarctic cap imagery | Levels 0–5 mirrored locally (`tools/flatworld/mirror_gibs.py`), 6–7 live | Public domain (NASA) |
+| NASA GIBS MODIS Terra corrected reflectance (2026-07-20) | Arctic cap imagery north of ~81–85° | Mirrored locally (top tile row only) | Public domain (NASA) |
+| NASA GIBS VIIRS Black Marble 2016 | Night lights | Mirrored locally, levels 0–5 | Public domain (NASA) |
+| OpenFreeMap / OpenMapTiles (`tiles.openfreemap.org`) | 3D buildings and roads | Live vector tiles, keyless | © OpenStreetMap contributors, ODbL, https://www.openstreetmap.org/copyright |
+| Natural Earth (bundled `src/data/local_data/natural_earth`) | Coastlines and borders | Bundled | Public domain |
+
+Beyond the South-Pole circle the flat world shows procedurally generated, hypothetical ice: it
+uses no data source and carries no latitude or longitude.
+
 ## In-app attribution
 
 The required Google Maps / Cesium credit renders on the on-globe credit line (`#cesium-credits`, bottom-left) and must stay visible — including in clean-view and recording modes (the whole line, logo + "Google Maps" + the "Data attribution" link, stays on screen; only the GEV panels/HUD fade). The layer-specific credits (adsb.lol, adsbdb, TeleGeography, OSM datacenters/dams/roads, NASA FIRMS, CelesTrak, USGS, City of Austin, Fintraffic, GBFS, Radio Browser, OpenSky, AISStream) are registered into the expandable **"Data attribution"** popover on that credit line via `viewer.creditDisplay.addStaticCredit(new Cesium.Credit(html, /* showOnScreen */ false))` — see `src/data/dataCredits.js`. When you add a new data source, add its license and attribution to this file **and** append an entry to `DATA_CREDITS` in `src/data/dataCredits.js` so it surfaces in the app.

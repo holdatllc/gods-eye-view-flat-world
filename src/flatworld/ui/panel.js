@@ -1,12 +1,13 @@
 /**
- * Flat World control panel: mode switch, camera systems, live layers, readouts and bookmarks.
- * Route measurement and environment controls register into the same panel (see nav/ and ice/).
+ * Flat World control panel: camera systems, sun and time, the hypothetical ice world, live layers,
+ * routes and distortion, position readouts, bookmarks, data status and attribution.
  */
 import { DOMAIN_GPS } from '../projection/domains.js';
 import { headingToYaw } from '../render/controls.js';
 import { ROUTE_PRESETS } from '../nav/routeLayer.js';
 
 const BOOKMARK_KEY = 'gev.flatworld.bookmarks.v1';
+const MAX_SEED = 2147483647;
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -33,6 +34,14 @@ export function fmtLatLon(lat, lon) {
   return `${Math.abs(lat).toFixed(5)}°${ns} ${Math.abs(lon).toFixed(5)}°${ew}`;
 }
 
+/** East–west stretch of the projection, readable even where it grows without bound. */
+export function fmtScale(k) {
+  if (!Number.isFinite(k)) return '∞ (the South Pole is the whole rim)';
+  if (k >= 1000)
+    return `${Math.round(k).toLocaleString()}× — near the rim the map stretches without limit`;
+  return `${k.toFixed(3)} (E–W stretch)`;
+}
+
 export function createPanel({
   view,
   mode,
@@ -43,20 +52,8 @@ export function createPanel({
   buildings,
   frame,
   attributions,
+  toggle,
 }) {
-  const toggle = el(
-    'button',
-    {
-      class: 'fw-toggle',
-      type: 'button',
-      title: 'Switch between the globe and the flat world',
-      onclick: () => mode.toggle(),
-    },
-    el('span', { class: 'fw-disc' }),
-    el('span', { class: 'fw-toggle-label' }, 'FLAT WORLD'),
-  );
-  document.body.appendChild(toggle);
-
   const panel = el('div', {
     class: 'fw-panel',
     role: 'region',
@@ -76,7 +73,12 @@ export function createPanel({
   const section = (id, title) => {
     const heading = el(
       'h3',
-      { role: 'button', tabindex: '0', title: 'Show or hide' },
+      {
+        role: 'button',
+        tabindex: '0',
+        title: 'Show or hide',
+        class: 'fw-section-title',
+      },
       title,
     );
     const box = el('div', { class: `fw-section fw-${id}` }, heading);
@@ -90,14 +92,36 @@ export function createPanel({
       }
     };
     heading.addEventListener('click', toggleSection);
-    heading.addEventListener(
-      'keydown',
-      (e) => (e.key === 'Enter' || e.key === ' ') && toggleSection(),
-    );
+    heading.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggleSection();
+      }
+    });
     if (collapsed[id]) box.classList.add('collapsed');
     panel.appendChild(box);
     sections[id] = box;
     return box;
+  };
+  const button = (label, onclick, on = false) =>
+    el(
+      'button',
+      { class: on ? 'fw-btn on' : 'fw-btn', type: 'button', onclick },
+      label,
+    );
+  const rangeRow = (label, input, valueText) => {
+    const value = el('span', {}, valueText);
+    return {
+      row: el('div', { class: 'fw-kv' }, el('b', {}, label), value),
+      value,
+      input,
+    };
+  };
+
+  // Navigation buttons end tracking, so the camera goes where the user asked.
+  const navigate = (fn) => () => {
+    live.stopTracking();
+    fn();
   };
 
   // ---- Camera ------------------------------------------------------------------------------
@@ -109,15 +133,7 @@ export function createPanel({
     ['fly', 'FLY'],
     ['walk', 'WALK'],
   ]) {
-    modeButtons[id] = el(
-      'button',
-      {
-        class: 'fw-btn',
-        type: 'button',
-        onclick: () => view.controls.setMode(id),
-      },
-      label,
-    );
+    modeButtons[id] = button(label, () => view.controls.setMode(id));
     modeRow.append(modeButtons[id]);
   }
   cam.append(
@@ -125,101 +141,76 @@ export function createPanel({
     el(
       'div',
       { class: 'fw-row' },
-      el(
-        'button',
-        { class: 'fw-btn', type: 'button', onclick: () => view.overview() },
+      button(
         'WHOLE DISC',
+        navigate(() => view.overview()),
       ),
-      el(
-        'button',
-        { class: 'fw-btn', type: 'button', onclick: () => goNorthPole() },
+      button(
         'NORTH POLE',
+        navigate(() => goNorthPole()),
       ),
-      el(
-        'button',
-        { class: 'fw-btn', type: 'button', onclick: () => goIceFrontier() },
+      button(
         'ICE FRONTIER →',
+        navigate(() => goIceFrontier()),
       ),
     ),
     el(
       'div',
       { class: 'fw-note' },
-      'Drag: pan · right-drag/shift: rotate · wheel: zoom · dbl-click: dive. Fly/Walk: WASD, Q/E, shift, drag to look.',
+      'Drag: pan · right-drag/shift: rotate · wheel: zoom · dbl-click: dive. Fly/Walk: WASD, Q/E, Shift, drag to look. While the flat world is shown, the globe’s keyboard shortcuts are paused.',
     ),
   );
-  const exLabel = el('span', {}, '1×');
   const exSlider = el('input', {
     type: 'range',
     min: '0',
     max: '100',
     value: '0',
   });
+  const ex = rangeRow('Relief', exSlider, '1×');
   const exValue = (v) =>
     [1, 1.5, 2, 3, 5, 8, 12, 20, 35, 60, 100][Math.round((v / 100) * 10)];
   exSlider.addEventListener('input', () => {
     const e = exValue(Number(exSlider.value));
-    exLabel.textContent = `${e}×`;
+    ex.value.textContent = `${e}×`;
     view.chunks.setExaggeration(e, view.chunks.drain);
   });
-  const drainBtn = el(
-    'button',
-    { class: 'fw-btn', type: 'button' },
-    'DRAIN OCEANS',
-  );
-  drainBtn.addEventListener('click', () => {
+  const drainBtn = button('DRAIN OCEANS', () => {
     const drain = view.chunks.drain ? 0 : 1;
     view.chunks.setExaggeration(view.chunks.exaggeration, drain);
     drainBtn.classList.toggle('on', Boolean(drain));
   });
-  const distBtn = el(
-    'button',
-    { class: 'fw-btn', type: 'button' },
-    'DISTORTION',
-  );
-  distBtn.addEventListener('click', () => {
+  const distBtn = button('DISTORTION', () => {
     const u = view.chunks.material.uniforms.uDistortion;
     u.value = u.value ? 0 : 1;
     distBtn.classList.toggle('on', Boolean(u.value));
   });
-  const domainBtn = el(
-    'button',
-    { class: 'fw-btn', type: 'button' },
-    'SHOW DOMAINS',
-  );
-  domainBtn.addEventListener('click', () => {
+  const domainBtn = button('SHOW DOMAINS', () => {
     const u = view.chunks.material.uniforms.uDomainTint;
     u.value = u.value ? 0 : 1;
     domainBtn.classList.toggle('on', Boolean(u.value));
   });
-  const coastBtn = el(
-    'button',
-    { class: 'fw-btn on', type: 'button' },
+  const coastBtn = button(
     'COASTLINES',
+    () => {
+      vectors.showCoast = !vectors.showCoast;
+      coastBtn.classList.toggle('on', vectors.showCoast);
+    },
+    true,
   );
-  coastBtn.addEventListener('click', () => {
-    vectors.showCoast = !vectors.showCoast;
-    coastBtn.classList.toggle('on', vectors.showCoast);
-  });
-  const gridBtn = el(
-    'button',
-    { class: 'fw-btn', type: 'button' },
-    'GLEASON GRID',
-  );
-  gridBtn.addEventListener('click', () => {
+  const gridBtn = button('GLEASON GRID', () => {
     vectors.showGrid = !vectors.showGrid;
     gridBtn.classList.toggle('on', vectors.showGrid);
   });
-  const buildingsBtn = el(
-    'button',
-    { class: 'fw-btn on', type: 'button' },
+  const buildingsBtn = button(
     '3D BUILDINGS',
+    () => {
+      buildings.enabled = !buildings.enabled;
+      buildingsBtn.classList.toggle('on', buildings.enabled);
+    },
+    buildings.enabled,
   );
-  buildingsBtn.addEventListener('click', () => {
-    buildings.enabled = !buildings.enabled;
-    buildingsBtn.classList.toggle('on', buildings.enabled);
-  });
   cam.append(
-    el('div', { class: 'fw-kv' }, el('b', {}, 'Relief'), exLabel),
+    ex.row,
     exSlider,
     el(
       'div',
@@ -235,7 +226,6 @@ export function createPanel({
 
   // ---- Sun and time ----------------------------------------------------------------------
   const env = section('environment', 'SUN & TIME');
-  const timeLabel = el('span', {}, 'live');
   const timeSlider = el('input', {
     type: 'range',
     min: '-720',
@@ -243,21 +233,16 @@ export function createPanel({
     value: '0',
     step: '10',
   });
-  const applyTime = () => {
+  const time = rangeRow('Sun time', timeSlider, 'live (real sun)');
+  timeSlider.addEventListener('input', () => {
     const minutes = Number(timeSlider.value);
     view.time.offsetMinutes = minutes;
-    timeLabel.textContent =
+    time.value.textContent =
       minutes === 0
         ? 'live (real sun)'
         : `${minutes > 0 ? '+' : ''}${(minutes / 60).toFixed(1)} h from now`;
-  };
-  timeSlider.addEventListener('input', applyTime);
-  const iceSkyBtn = el(
-    'button',
-    { class: 'fw-btn', type: 'button' },
-    'ICE: SOUTH-POLE SKY',
-  );
-  iceSkyBtn.addEventListener('click', () => {
+  });
+  const iceSkyBtn = button('ICE: SOUTH-POLE SKY', () => {
     view.time.iceSky = view.time.iceSky === 'fixed' ? 'pole' : 'fixed';
     iceSkyBtn.textContent =
       view.time.iceSky === 'fixed'
@@ -265,7 +250,7 @@ export function createPanel({
         : 'ICE: SOUTH-POLE SKY';
   });
   env.append(
-    el('div', { class: 'fw-kv' }, el('b', {}, 'Sun time'), timeLabel),
+    time.row,
     timeSlider,
     el('div', { class: 'fw-row' }, iceSkyBtn),
     el(
@@ -278,8 +263,8 @@ export function createPanel({
   // ---- Hypothetical ice world --------------------------------------------------------------
   const iceBox = section('ice', 'ICE WORLD (HYPOTHETICAL)');
   const iceParams = { ...ice.field.params };
+  const iceInputs = {};
   const slider = (label, key, min, max, step, fmt = (v) => v) => {
-    const value = el('span', {}, String(fmt(iceParams[key])));
     const input = el('input', {
       type: 'range',
       min: String(min),
@@ -287,15 +272,14 @@ export function createPanel({
       step: String(step),
       value: String(iceParams[key]),
     });
+    const r = rangeRow(label, input, String(fmt(iceParams[key])));
     input.addEventListener('input', () => {
       iceParams[key] = Number(input.value);
-      value.textContent = String(fmt(iceParams[key]));
+      r.value.textContent = String(fmt(iceParams[key]));
     });
     input.addEventListener('change', () => applyIce());
-    iceBox.append(
-      el('div', { class: 'fw-kv' }, el('b', {}, label), value),
-      input,
-    );
+    iceInputs[key] = { input, value: r.value, fmt };
+    iceBox.append(r.row, input);
   };
   const applyIce = () => {
     view.chunks.configure({ iceParams });
@@ -303,11 +287,20 @@ export function createPanel({
   };
   const seedInput = el('input', {
     type: 'number',
+    min: '0',
+    max: String(MAX_SEED),
+    step: '1',
     value: String(iceParams.seed),
-    style: 'width:90px',
+    style: 'width:110px',
   });
   seedInput.addEventListener('change', () => {
-    iceParams.seed = Math.floor(Number(seedInput.value) || 0);
+    // Seeds are 32-bit integers; anything else is clamped so two different inputs never
+    // silently alias to the same world.
+    const v = Math.floor(Number(seedInput.value));
+    iceParams.seed = Number.isFinite(v)
+      ? Math.min(Math.max(v, 0), MAX_SEED)
+      : 0;
+    seedInput.value = String(iceParams.seed);
     applyIce();
   });
   iceBox.append(
@@ -320,75 +313,65 @@ export function createPanel({
   slider('Crevasses', 'crevasseDensity', 0, 1, 0.05);
   slider('Snow fill', 'snowFill', 0, 1, 0.05);
   const w = ice.weather;
-  const weatherBtn = el(
-    'button',
-    { class: 'fw-btn on', type: 'button' },
+  const weatherBtn = button(
     'POLAR WEATHER',
+    () => {
+      w.enabled = !w.enabled;
+      weatherBtn.classList.toggle('on', w.enabled);
+    },
+    w.enabled,
   );
-  weatherBtn.addEventListener('click', () => {
-    w.enabled = !w.enabled;
-    weatherBtn.classList.toggle('on', w.enabled);
-  });
-  const caveBtn = el(
-    'button',
-    { class: 'fw-btn on', type: 'button' },
+  const caveBtn = button(
     'ICE CAVES',
+    () => {
+      ice.cavesEnabled = !ice.cavesEnabled;
+      caveBtn.classList.toggle('on', ice.cavesEnabled);
+    },
+    ice.cavesEnabled,
   );
-  caveBtn.addEventListener('click', () => {
-    ice.cavesEnabled = !ice.cavesEnabled;
-    caveBtn.classList.toggle('on', ice.cavesEnabled);
-  });
-  const snowSlider = el('input', {
-    type: 'range',
-    min: '0',
-    max: '1',
-    step: '0.05',
-    value: String(w.intensity),
-  });
-  snowSlider.addEventListener(
-    'input',
-    () => (w.intensity = Number(snowSlider.value)),
-  );
-  const whiteSlider = el('input', {
-    type: 'range',
-    min: '0',
-    max: '1',
-    step: '0.05',
-    value: String(w.whiteout),
-  });
-  whiteSlider.addEventListener(
-    'input',
-    () => (w.whiteout = Number(whiteSlider.value)),
-  );
-  const windSlider = el('input', {
-    type: 'range',
-    min: '0',
-    max: '40',
-    step: '1',
-    value: String(w.windSpeed),
-  });
-  windSlider.addEventListener(
-    'input',
-    () => (w.windSpeed = Number(windSlider.value)),
-  );
+  const weatherSlider = (label, key, min, max, step, fmt) => {
+    const input = el('input', {
+      type: 'range',
+      min: String(min),
+      max: String(max),
+      step: String(step),
+      value: String(w[key]),
+    });
+    const r = rangeRow(label, input, fmt(w[key]));
+    input.addEventListener('input', () => {
+      w[key] = Number(input.value);
+      r.value.textContent = fmt(w[key]);
+    });
+    return [r.row, input];
+  };
   iceBox.append(
     el(
       'div',
       { class: 'fw-row' },
       weatherBtn,
       caveBtn,
-      el(
-        'button',
-        { class: 'fw-btn', type: 'button', onclick: () => goVista() },
+      button(
         'FIND DRAMATIC TERRAIN',
+        navigate(() => goVista()),
       ),
     ),
-    el('div', { class: 'fw-kv' }, el('b', {}, 'Snowfall'), el('span', {}, '')),
-    snowSlider,
-    el('div', { class: 'fw-kv' }, el('b', {}, 'Whiteout'), el('span', {}, '')),
-    whiteSlider,
-    el('div', { class: 'fw-kv' }, el('b', {}, 'Wind m/s'), el('span', {}, '')),
-    windSlider,
+    ...weatherSlider(
+      'Snowfall',
+      'intensity',
+      0,
+      1,
+      0.05,
+      (v) => `${Math.round(v * 100)}%`,
+    ),
+    ...weatherSlider(
+      'Whiteout',
+      'whiteout',
+      0,
+      1,
+      0.05,
+      (v) => `${Math.round(v * 100)}%`,
+    ),
+    ...weatherSlider('Wind', 'windSpeed', 0, 40, 1, (v) => `${v} m/s`),
     el(
       'div',
       { class: 'fw-note' },
@@ -406,42 +389,72 @@ export function createPanel({
     ['vessels', 'SHIPS'],
     ['satellites', 'SATELLITES'],
   ]) {
-    layerButtons[kind] = el(
-      'button',
-      {
-        class: 'fw-btn',
-        type: 'button',
-        onclick: () => live.toggleLayer(kind),
-      },
-      label,
-    );
+    layerButtons[kind] = button(label, () => live.toggleLayer(kind));
+    layerButtons[kind].dataset.label = label;
     layerRow.append(layerButtons[kind]);
   }
+  const satGroundBtn = button('SATELLITES: TRUE HEIGHT', () => {
+    live.satelliteGroundPoints = !live.satelliteGroundPoints;
+    satGroundBtn.textContent = live.satelliteGroundPoints
+      ? 'SATELLITES: GROUND POINT'
+      : 'SATELLITES: TRUE HEIGHT';
+  });
+  const layerStatus = el('div', { class: 'fw-note fw-warn' });
   const trackedBox = el('div', { class: 'fw-kv' });
   layers.append(
     layerRow,
+    el('div', { class: 'fw-row' }, satGroundBtn),
+    layerStatus,
     el(
       'div',
       { class: 'fw-note' },
-      'Click an aircraft, ship or satellite to track it.',
+      'Click an aircraft, ship or satellite to track it. Satellites are drawn at their real height; seen from far above, high orbits appear outside the disc by perspective.',
     ),
     trackedBox,
   );
+  let trackedRec = null;
+  live.onTrackingChange = (rec) => {
+    trackedRec = rec;
+    if (!rec) trackedBox.replaceChildren();
+  };
+  function renderTracked() {
+    if (!trackedRec || !live.tracked) return;
+    const r = trackedRec;
+    const fix = r.fixes?.[r.fixes.length - 1];
+    const ageS = r.lastFixMs
+      ? Math.round((Date.now() - r.lastFixMs) / 1000)
+      : null;
+    kv(trackedBox, [
+      ['Tracking', r.label],
+      [
+        'Latest fix',
+        fix ? `${fix.lat.toFixed(5)}, ${fix.lon.toFixed(5)}` : '—',
+      ],
+      [
+        'Fix received',
+        ageS === null ? '—' : `${ageS} s ago (${r.source || 'feed'})`,
+      ],
+      [
+        'Drawn at',
+        `${r.lat.toFixed(5)}, ${r.lon.toFixed(5)} (between real fixes)`,
+      ],
+      [
+        r.kind === 'vessels' ? 'Height' : 'Altitude',
+        `${Math.round(r.altitudeM)} m${r.onGround ? ' (on ground)' : ''}`,
+      ],
+      ['', button('STOP TRACKING', () => live.stopTracking())],
+    ]);
+  }
 
   // ---- Routes & distortion -------------------------------------------------------------------
   const routeBox = section('routes', 'ROUTES & DISTORTION');
-  const measureBtn = el(
-    'button',
-    { class: 'fw-btn', type: 'button' },
-    'MEASURE (CLICK 2 POINTS)',
-  );
-  measureBtn.addEventListener('click', () => {
+  const measureBtn = button('MEASURE (CLICK 2 POINTS)', () => {
     routes.startMeasuring();
     measureBtn.classList.add('on');
   });
   const presetSel = el(
     'select',
-    { class: 'fw-btn' },
+    { class: 'fw-btn', 'aria-label': 'Preset route' },
     el('option', { value: '' }, 'Preset route…'),
   );
   ROUTE_PRESETS.forEach((r, i) =>
@@ -450,15 +463,13 @@ export function createPanel({
   presetSel.addEventListener('change', () => {
     const r = ROUTE_PRESETS[Number(presetSel.value)];
     if (!r) return;
+    live.stopTracking();
     routes.measureGeodetic(r.a, r.b);
     view.overview();
+    presetSel.value = '';
+    presetSel.blur();
   });
-  const tissotBtn = el(
-    'button',
-    { class: 'fw-btn', type: 'button' },
-    'TISSOT CIRCLES',
-  );
-  tissotBtn.addEventListener('click', () => {
+  const tissotBtn = button('TISSOT CIRCLES', () => {
     routes.tissot.visible = !routes.tissot.visible;
     tissotBtn.classList.toggle('on', routes.tissot.visible);
   });
@@ -468,22 +479,18 @@ export function createPanel({
       'div',
       { class: 'fw-row' },
       measureBtn,
-      el(
-        'button',
-        { class: 'fw-btn', type: 'button', onclick: () => routes.clear() },
-        'CLEAR',
-      ),
+      button('CLEAR', () => routes.clear()),
     ),
     el('div', { class: 'fw-row' }, presetSel, tissotBtn),
     routeResult,
     el(
       'div',
       { class: 'fw-note' },
-      "Cyan: real-world geodesic (shortest path on the Earth). Amber: straight line on this flat map (shortest path across the disc). Pink circles: true 500 km circles; their stretching is the projection's distortion. DISTORTION colours the map by east–west stretch.",
+      "Cyan: the real-world geodesic (shortest path on the Earth). Amber: the straight line on this flat map (shortest path across the disc). Pink circles: true 500 km circles; their stretching is the projection's distortion. DISTORTION colours the map by east–west stretch.",
     ),
   );
   routes.onResult = (r) => {
-    measureBtn.classList.remove('on');
+    measureBtn.classList.toggle('on', routes.measuring);
     if (!r) {
       routeResult.replaceChildren();
       return;
@@ -492,26 +499,31 @@ export function createPanel({
     if (r.geodesic) {
       const pct = (r.comparison.flatOverGeodesic - 1) * 100;
       rows.push(
-        ['Geodesic (real)', `${fmtDistance(r.geodesic.distanceM)}`],
-        ['Flat straight', `${fmtDistance(r.flat.distanceM)} on map`],
+        ['Real (geodesic)', `${fmtDistance(r.geodesic.distanceM)} on Earth`],
+        ['Flat-map line', `${fmtDistance(r.flat.distanceM)} on the map`],
         [
-          'Difference',
+          'Flat − real',
           `${r.comparison.flatMinusGeodesicM >= 0 ? '+' : ''}${fmtDistance(r.comparison.flatMinusGeodesicM)} (${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)`,
         ],
         [
-          'Flat line walked',
-          `${fmtDistance(r.flatPathOnEarth.groundLengthM)} on Earth`,
+          'Flat line on Earth',
+          `${fmtDistance(r.flatPathOnEarth.groundLengthM)} if travelled for real`,
         ],
-        ['Geodesic on map', `${fmtDistance(r.geodesic.lengthOnMapM)} (curved)`],
         [
-          'Initial bearing',
-          `${((r.geodesic.initialAzimuthDeg + 360) % 360).toFixed(1)}°`,
+          'Geodesic drawn',
+          r.geodesic.crossesSouthPole
+            ? 'passes through the South Pole (the whole rim) — length on the map is undefined'
+            : `${fmtDistance(r.geodesic.lengthOnMapM)} long on the map (curved)`,
+        ],
+        [
+          'Start bearing',
+          `${((r.geodesic.initialAzimuthDeg + 360) % 360).toFixed(1)}° from true north (real geodesic)`,
         ],
       );
     } else {
       rows.push(
-        ['Flat distance', fmtDistance(r.flat.distanceM)],
-        ['Geodesic', 'n/a — hypothetical ice'],
+        ['Flat-map line', fmtDistance(r.flat.distanceM)],
+        ['Real (geodesic)', 'n/a — hypothetical ice'],
         ['', r.note],
       );
     }
@@ -522,7 +534,11 @@ export function createPanel({
   const readout = section('readout', 'POSITION');
   const focusBox = el('div', { class: 'fw-kv' });
   const cursorBox = el('div', { class: 'fw-kv' });
-  readout.append(focusBox, el('h3', {}, 'UNDER CURSOR'), cursorBox);
+  readout.append(
+    focusBox,
+    el('div', { class: 'fw-subtitle' }, 'UNDER CURSOR'),
+    cursorBox,
+  );
 
   // ---- Bookmarks ---------------------------------------------------------------------------
   const marks = section('bookmarks', 'SAVED LOCATIONS');
@@ -531,19 +547,19 @@ export function createPanel({
     el(
       'div',
       { class: 'fw-row' },
-      el(
-        'button',
-        { class: 'fw-btn', type: 'button', onclick: () => saveBookmark() },
-        'SAVE HERE',
-      ),
-      el(
-        'button',
-        { class: 'fw-btn', type: 'button', onclick: () => returnToLastReal() },
+      button('SAVE HERE', () => saveBookmark()),
+      button(
         'RETURN TO LAST REAL PLACE',
+        navigate(() => returnToLastReal()),
       ),
     ),
     markList,
   );
+
+  // ---- Data status --------------------------------------------------------------------------
+  const status = section('status', 'DATA STATUS');
+  const statusBox = el('div', { class: 'fw-kv' });
+  status.append(statusBox);
 
   const attrib = el(
     'div',
@@ -562,7 +578,15 @@ export function createPanel({
     view.lookAtPlane({ x: 0, y: 0, range: 2.5e6, pitch: 1.2, animate: true });
   }
 
+  function departToIce() {
+    // Remember where the user was before heading into the hypothetical ice.
+    const f = view.focus;
+    if (f?.domain?.domain === DOMAIN_GPS && !view.controls.animation)
+      lastReal = realMark(f);
+  }
+
   function goVista() {
+    departToIce();
     const f = view.getFocus();
     let x = f.x;
     let y = f.y;
@@ -584,6 +608,7 @@ export function createPanel({
   }
 
   function goIceFrontier() {
+    departToIce();
     const f = view.getFocus();
     let ang = Math.atan2(f.y, f.x);
     if (Math.hypot(f.x, f.y) < 1) ang = 0;
@@ -613,27 +638,44 @@ export function createPanel({
     }
   }
   let lastReal = null;
+
+  /** The current camera as a bookmark, in whichever mode the user is in. */
+  function cameraPose() {
+    const c = view.controls;
+    if (c.mode === 'orbit')
+      return { mode: 'orbit', range: c.distance, pitch: c.pitch, yaw: c.yaw };
+    const p = view.camera.position;
+    return {
+      mode: c.mode,
+      eye: { x: p.x, y: -p.z, h: p.y / view.chunks.exaggeration },
+      lookYaw: c.lookYaw,
+      lookPitch: c.lookPitch,
+    };
+  }
+
+  function realMark(f) {
+    return {
+      kind: 'gps',
+      lat: f.domain.lat,
+      lon: f.domain.lon,
+      heading: f.heading,
+      ...cameraPose(),
+      name: fmtLatLon(f.domain.lat, f.domain.lon),
+    };
+  }
+
   function saveBookmark() {
     const f = view.getFocus();
-    const c = view.controls;
     const mark =
       f.domain.domain === DOMAIN_GPS
-        ? {
-            kind: 'gps',
-            lat: f.domain.lat,
-            lon: f.domain.lon,
-            range: c.distance,
-            heading: f.heading,
-            pitch: c.pitch,
-            name: fmtLatLon(f.domain.lat, f.domain.lon),
-          }
+        ? realMark(f)
         : {
             kind: 'ice',
             iceX: f.x,
             iceY: f.y,
-            range: c.distance,
-            yaw: c.yaw,
-            pitch: c.pitch,
+            ...cameraPose(),
+            // The ice is generated from these settings: keep them so the place is the same later.
+            iceParams: { ...ice.field.params },
             name: `ICE ${(f.x / 1000).toFixed(0)}, ${(f.y / 1000).toFixed(0)} km`,
           };
     const list = loadMarks();
@@ -641,27 +683,57 @@ export function createPanel({
     storeMarks(list);
     renderMarks();
   }
-  function goMark(m) {
-    if (m.kind === 'gps') {
-      const w = frame.geodeticToWorld(m.lat, m.lon);
+
+  function restorePose(m, x, y) {
+    if (m.mode && m.mode !== 'orbit' && m.eye) {
+      const c = view.controls;
+      c.setMode('orbit');
       view.lookAtPlane({
-        x: w.x,
-        y: w.y,
-        range: m.range,
-        pitch: m.pitch,
-        yaw: headingToYaw(m.heading, w.x, w.y),
-        animate: true,
+        x,
+        y,
+        range: m.eye.h * 3 + 500,
+        pitch: 0.3,
+        animate: false,
       });
-    } else {
-      view.lookAtPlane({
-        x: m.iceX,
-        y: m.iceY,
-        range: m.range,
-        pitch: m.pitch,
-        yaw: m.yaw,
-        animate: true,
-      });
+      c.setMode(m.mode);
+      c.position.set(m.eye.x, m.eye.h * view.chunks.exaggeration, -m.eye.y);
+      c.lookYaw = m.lookYaw;
+      c.lookPitch = m.lookPitch;
+      return;
     }
+    const yaw =
+      m.yaw ??
+      (m.heading !== undefined ? headingToYaw(m.heading, x, y) : undefined);
+    view.lookAtPlane({
+      x,
+      y,
+      range: m.range ?? 20000,
+      pitch: m.pitch ?? 0.6,
+      yaw,
+      animate: true,
+    });
+  }
+
+  function goMark(m) {
+    live.stopTracking();
+    if (m.kind === 'gps') {
+      const p = frame.geodeticToWorld(m.lat, m.lon);
+      restorePose(m, p.x, p.y);
+      return;
+    }
+    if (
+      m.iceParams &&
+      JSON.stringify(m.iceParams) !== JSON.stringify(ice.field.params)
+    ) {
+      Object.assign(iceParams, m.iceParams);
+      seedInput.value = String(iceParams.seed);
+      for (const [key, inp] of Object.entries(iceInputs)) {
+        inp.input.value = String(iceParams[key]);
+        inp.value.textContent = String(inp.fmt(iceParams[key]));
+      }
+      applyIce();
+    }
+    restorePose(m, m.iceX, m.iceY);
   }
   function returnToLastReal() {
     const list = loadMarks().filter((m) => m.kind === 'gps');
@@ -674,13 +746,7 @@ export function createPanel({
       ...loadMarks()
         .slice(-8)
         .reverse()
-        .map((m) =>
-          el(
-            'button',
-            { class: 'fw-btn', type: 'button', onclick: () => goMark(m) },
-            m.name,
-          ),
-        ),
+        .map((m) => button(m.name, () => goMark(m))),
     );
   }
   renderMarks();
@@ -709,9 +775,14 @@ export function createPanel({
       return [
         ['Domain', domainTag('gps')],
         ['Lat / Lon', fmtLatLon(d.lat, d.lon)],
-        ['Elevation', `${Math.round(d.height)} m`],
+        [
+          'Elevation',
+          Number.isFinite(d.height)
+            ? `≈ ${Math.round(d.height)} m (rendered terrain)`
+            : 'unknown (terrain not loaded)',
+        ],
         ['From N. Pole', fmtDistance(Math.hypot(x, y))],
-        ['Scale k', `${k.toFixed(3)} (E–W stretch)`],
+        ['Scale k', fmtScale(k)],
       ];
     }
     return [
@@ -720,10 +791,46 @@ export function createPanel({
         'Ice X / Y',
         `${(d.iceX / 1000).toFixed(3)}, ${(d.iceY / 1000).toFixed(3)} km`,
       ],
-      ['Elevation', `${Math.round(d.z)} m (procedural)`],
+      ['Elevation', `≈ ${Math.round(d.z)} m (procedural)`],
       ['Beyond pole', fmtDistance(d.distanceBeyondPole)],
       ['Lat / Lon', 'none — not real geography'],
     ];
+  }
+
+  function renderStatus() {
+    const s = view.chunks.stats;
+    const fails = s.cache?.failuresBySource || {};
+    const rows = [];
+    const transient = s.cache?.transient || 0;
+    rows.push([
+      'Terrain chunks',
+      `${view.chunks.chunks.size} loaded, ${view.chunks.pending.size} queued${s.incomplete ? `, ${s.incomplete} rebuilt after source outages` : ''}`,
+    ]);
+    if (transient)
+      rows.push(['Tile errors', `${transient} temporary (retrying)`]);
+    const missing = Object.entries(fails)
+      .filter(([, n]) => n > 0)
+      .map(([k, n]) => `${k} ${n}`)
+      .join(', ');
+    if (missing)
+      rows.push(['Missing tiles', `${missing} (coarser data shown)`]);
+    const b = buildings.stats?.();
+    if (b && buildings.enabled) {
+      const failed = b.tilesFailed ?? 0;
+      rows.push([
+        'Buildings',
+        `${b.tilesLoaded} tiles${failed ? `, ${failed} failed (OpenFreeMap unreachable?)` : ''}`,
+      ]);
+    }
+    kv(statusBox, rows);
+    // Layer problems the user should see (e.g. ships without an AISStream key).
+    const notes = [];
+    for (const kind of ['flights', 'military', 'vessels', 'satellites']) {
+      if (!live.isLayerOn(kind)) continue;
+      const err = live.layerError?.(kind);
+      if (err) notes.push(`${layerButtons[kind].dataset.label}: ${err}`);
+    }
+    layerStatus.textContent = notes.join(' · ');
   }
 
   let lastFocusUpdate = 0;
@@ -735,15 +842,9 @@ export function createPanel({
     lastFocusUpdate = now;
     const f = view.focus;
     if (f) {
-      if (f.domain.domain === DOMAIN_GPS)
-        lastReal = {
-          kind: 'gps',
-          lat: f.domain.lat,
-          lon: f.domain.lon,
-          range: view.controls.distance,
-          heading: f.heading,
-          pitch: view.controls.pitch,
-        };
+      // Only settled real places count as "last real place" (not points passed in flight).
+      if (f.domain.domain === DOMAIN_GPS && !view.controls.animation)
+        lastReal = realMark(f);
       kv(focusBox, [
         ...describe(f.domain, f.x, f.y),
         ['Altitude', fmtDistance(f.altitude)],
@@ -754,13 +855,15 @@ export function createPanel({
       b.classList.toggle('on', view.controls.mode === m);
     for (const [k, b] of Object.entries(layerButtons)) {
       b.classList.toggle('on', live.isLayerOn(k));
-      b.textContent =
-        `${b.textContent.split(' ')[0]} ${live.records[k]?.length ? live.records[k].length : ''}`.trim();
+      const n = live.records[k]?.length;
+      b.textContent = `${b.dataset.label}${n ? ` ${n}` : ''}`;
     }
+    renderTracked();
+    renderStatus();
   }
   requestAnimationFrame(tick);
 
-  const api = {
+  return {
     element: panel,
     toggle,
     section,
@@ -769,33 +872,14 @@ export function createPanel({
       toggle.querySelector('.fw-toggle-label').textContent = active
         ? 'BACK TO GLOBE'
         : 'FLAT WORLD';
+      if (!active) trackedBox.replaceChildren();
     },
     showCursor(p) {
       kv(cursorBox, p ? describe(p.domain, p.x, p.y) : describe(null));
     },
     showTracked(rec) {
-      kv(trackedBox, [
-        ['Tracking', rec.label],
-        ['Source', `${rec.lat.toFixed(5)}, ${rec.lon.toFixed(5)}`],
-        ['Altitude', `${Math.round(rec.altitudeM)} m`],
-        [
-          '',
-          el(
-            'button',
-            {
-              class: 'fw-btn',
-              type: 'button',
-              onclick: () => {
-                live.stopTracking();
-                trackedBox.replaceChildren();
-              },
-            },
-            'STOP TRACKING',
-          ),
-        ],
-      ]);
+      trackedRec = rec;
+      renderTracked();
     },
-    onGroundClick: null,
   };
-  return api;
 }

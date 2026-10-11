@@ -49,6 +49,9 @@ export class ChunkManager {
     }
     this.jobs = new Map();
     this.nextId = 1;
+    /** Bumped whenever queued/in-flight builds become invalid (config change, trim, clear). */
+    this.epoch = 0;
+    this.retryIncompleteMs = 20000;
     this.maxInflightPerWorker = 3;
     this.material = createTerrainMaterial();
   }
@@ -56,24 +59,32 @@ export class ChunkManager {
   configure({ iceParams, rotationDeg }) {
     for (const w of this.workers)
       w.postMessage({ type: 'config', iceParams, rotationDeg });
+    // Results of builds started under the old settings are discarded when they arrive.
+    this.epoch += 1;
+    this.pending.clear();
     if (Number.isFinite(rotationDeg)) {
       this.clear();
       return;
     }
-    // New ice parameters only invalidate chunks that contain hypothetical ice.
-    for (const [key, c] of this.chunks) {
-      if (c.data.domainMix !== 'gps') {
-        this._dispose(c);
-        this.chunks.delete(key);
-      }
-    }
-    this.pending.clear();
+    // New ice parameters only invalidate chunks that contain hypothetical ice. They stay on
+    // screen, marked stale, until their rebuilt replacements arrive (no blank world meanwhile).
+    for (const c of this.chunks.values())
+      if (c.data.domainMix !== 'gps') c.stale = true;
   }
 
   clear() {
     for (const c of this.chunks.values()) this._dispose(c);
     this.chunks.clear();
     this.pending.clear();
+    this.epoch += 1;
+  }
+
+  _needsRebuild(chunk) {
+    return (
+      chunk.stale ||
+      (chunk.incomplete &&
+        performance.now() - chunk.builtAt > this.retryIncompleteMs)
+    );
   }
 
   key(level, tx, ty) {
@@ -93,7 +104,8 @@ export class ChunkManager {
 
   request(level, tx, ty, priority) {
     const key = this.key(level, tx, ty);
-    if (this.chunks.has(key)) return;
+    const existing = this.chunks.get(key);
+    if (existing && !this._needsRebuild(existing)) return;
     const p = this.pending.get(key);
     if (p) {
       p.priority = Math.min(p.priority, priority);
@@ -130,6 +142,7 @@ export class ChunkManager {
         level: p.level,
         tx: p.tx,
         ty: p.ty,
+        epoch: this.epoch,
       });
       worker.postMessage({
         type: 'build',
@@ -164,6 +177,11 @@ export class ChunkManager {
     if (!job) return;
     this.jobs.delete(msg.id);
     job.worker.busy -= 1;
+    if (job.epoch !== this.epoch) {
+      // Built for settings or a session that no longer apply: discard, never install.
+      this.stats.discarded = (this.stats.discarded || 0) + 1;
+      return;
+    }
     this.pending.delete(job.key);
     if (msg.type === 'failed') {
       this.stats.failed += 1;
@@ -180,7 +198,11 @@ export class ChunkManager {
       this.stats.tiles = (this.stats.tiles || 0) + t.tilesRequested;
       this.stats.resolveMs = (this.stats.resolveMs || 0) + t.resolveMs;
     }
+    if (msg.result.incomplete)
+      this.stats.incomplete = (this.stats.incomplete || 0) + 1;
     const chunk = this._createChunk(msg.result);
+    const previous = this.chunks.get(job.key);
+    if (previous) this._dispose(previous);
     this.chunks.set(job.key, chunk);
     this.onChunkReady(chunk);
   }
@@ -244,6 +266,9 @@ export class ChunkManager {
       maxH: data.maxH,
       lastUsed: this.frame,
       texture,
+      incomplete: Boolean(data.incomplete),
+      builtAt: performance.now(),
+      stale: false,
     };
     this._applyHeights(chunk);
     this.group.add(mesh);
@@ -254,10 +279,14 @@ export class ChunkManager {
   _applyHeights(chunk) {
     const e = this.exaggeration;
     const drain = this.drain;
-    const { surface, bed, skirt, normalRaw, size, grid } = chunk.data;
+    const { surface, bed, skirt, normalRaw, bedNormal, size, grid } =
+      chunk.data;
+    const normals = drain && bedNormal ? bedNormal : normalRaw;
     const pos = chunk.mesh.geometry.attributes.position;
     const nor = chunk.mesh.geometry.attributes.normal;
-    const skirtDepth = (size / grid) * 1.5 + 50;
+    // Skirts must cover the largest step to a neighbour several LOD levels coarser.
+    const range = (chunk.maxH ?? 0) - (chunk.minH ?? 0);
+    const skirtDepth = (size / grid) * 3 + 0.35 * Math.max(range, 0) + 100;
     let minY = Infinity;
     let maxY = -Infinity;
     for (let i = 0; i < surface.length; i += 1) {
@@ -268,9 +297,9 @@ export class ChunkManager {
         if (y < minY) minY = y;
         if (y > maxY) maxY = y;
       }
-      const nx = normalRaw[i * 3] * e;
-      const ny = normalRaw[i * 3 + 1];
-      const nz = normalRaw[i * 3 + 2] * e;
+      const nx = normals[i * 3] * e;
+      const ny = normals[i * 3 + 1];
+      const nz = normals[i * 3 + 2] * e;
       const len = Math.hypot(nx, ny, nz) || 1;
       nor.array[i * 3] = nx / len;
       nor.array[i * 3 + 1] = ny / len;
@@ -307,6 +336,7 @@ export class ChunkManager {
       }
     }
     this.pending.clear();
+    this.epoch += 1; // builds still in flight are dropped when they arrive
   }
 
   _dispose(chunk) {
@@ -396,6 +426,10 @@ export class ChunkManager {
         return false;
       }
       chunk.lastUsed = this.frame;
+      // Stale (old ice settings) or incomplete (transient source outage) chunks keep showing
+      // while a fresh build is requested at high priority.
+      if (this._needsRebuild(chunk))
+        this.request(level, tx, ty, (d / size) * 0.5);
       if (wantsRefine) {
         const kids = [
           [level + 1, tx * 2, ty * 2],
@@ -453,7 +487,7 @@ export class ChunkManager {
     }
     const hardCap = Math.round(this.maxChunks * 1.5);
     const candidates = [...this.chunks.entries()]
-      .filter(([key, c]) => !protectedKeys.has(key) && c.level > 0)
+      .filter(([key]) => !protectedKeys.has(key))
       .filter(([, c]) => this.chunks.size > hardCap || c.lastUsed < this.frame)
       .sort((a, b) => a[1].lastUsed - b[1].lastUsed || b[1].level - a[1].level);
     let excess = this.chunks.size - this.maxChunks;

@@ -34,6 +34,69 @@ export function geodesicRoute(a, b, { samples = 256 } = {}) {
 }
 
 /**
+ * The geodesic's image on the flat map, adaptively subdivided so every drawn chord is short in
+ * map space (near the South-Pole circle a few kilometres on the ground can span thousands of
+ * kilometres of map). A geodesic through (or within metres of) the South Pole is split there:
+ * the pole is the whole rim, so its image is two separate pieces and has no single length.
+ */
+export function geodesicImage(
+  frame,
+  a,
+  b,
+  { baseSamples = 256, flatM = 0, maxPoints = 40000 } = {},
+) {
+  const line = WGS84.InverseLine(a.lat, a.lon, b.lat, b.lon);
+  const total = line.s13;
+  const maxSeg = Math.max(2000, Math.min(50000, flatM / 300));
+  const at = (sDist) => {
+    const p = line.Position(sDist);
+    const w = frame.geodeticToWorld(p.lat2, p.lon2);
+    return { x: w.x, y: w.y, lat: p.lat2, s: sDist };
+  };
+  const segments = [[]];
+  let crossesSouthPole = false;
+  let count = 0;
+  const emit = (p) => {
+    segments[segments.length - 1].push(p);
+    count += 1;
+  };
+  const refine = (p0, p1, depth) => {
+    const gap = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+    if (gap <= maxSeg || count > maxPoints) {
+      emit(p1);
+      return;
+    }
+    if (depth >= 40 || p1.s - p0.s < 0.01) {
+      // Unresolvable jump: only possible across the South Pole, which maps to the whole rim.
+      crossesSouthPole = true;
+      segments.push([p1]);
+      count += 1;
+      return;
+    }
+    const mid = at((p0.s + p1.s) / 2);
+    refine(p0, mid, depth + 1);
+    refine(mid, p1, depth + 1);
+  };
+  let prev = at(0);
+  emit(prev);
+  for (let i = 1; i <= baseSamples; i += 1) {
+    const next = at((total * i) / baseSamples);
+    refine(prev, next, 0);
+    prev = next;
+  }
+  let lengthM = 0;
+  for (const seg of segments)
+    for (let i = 1; i < seg.length; i += 1)
+      lengthM += Math.hypot(seg[i].x - seg[i - 1].x, seg[i].y - seg[i - 1].y);
+  return {
+    points: segments.flat(),
+    segments: segments.filter((seg) => seg.length > 1),
+    lengthM,
+    crossesSouthPole,
+  };
+}
+
+/**
  * Compare a pair of world-frame points (each { x, y } in the display frame).
  * @param {ReturnType<import('../projection/domains.js').createWorldFrame>} frame
  */
@@ -57,15 +120,11 @@ export function compareRoutes(frame, p1, p2, { samples = 256 } = {}) {
     return result;
   }
   const g = geodesicRoute(d1, d2, { samples });
-  g.plane = g.points.map((p) => frame.geodeticToWorld(p.lat, p.lon));
-  let geodesicDrawnLengthM = 0;
-  for (let i = 1; i < g.plane.length; i += 1) {
-    geodesicDrawnLengthM += Math.hypot(
-      g.plane[i].x - g.plane[i - 1].x,
-      g.plane[i].y - g.plane[i - 1].y,
-    );
-  }
-  g.lengthOnMapM = geodesicDrawnLengthM;
+  const image = geodesicImage(frame, d1, d2, { baseSamples: samples, flatM });
+  g.plane = image.points;
+  g.segments = image.segments;
+  g.crossesSouthPole = image.crossesSouthPole;
+  g.lengthOnMapM = image.crossesSouthPole ? NaN : image.lengthM;
   result.geodesic = g;
 
   // True ground length of the map-straight chord: invert samples along it and add geodesic

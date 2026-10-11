@@ -21,6 +21,29 @@ async function decode(blob) {
   return { width, height, rgba: ctx.getImageData(0, 0, width, height).data };
 }
 
+/**
+ * Esri answers HTTP 200 with a grey "Map data not yet available" image where it has no imagery
+ * at a zoom. Detect it (94% of pixels are exactly RGB 204,204,204) and treat it as a missing
+ * tile so the sampler falls back to a coarser real tile.
+ */
+function isEsriPlaceholder({ width, height, rgba }) {
+  let grey = 0;
+  let total = 0;
+  for (let y = 2; y < height; y += 7) {
+    for (let x = 3; x < width; x += 7) {
+      const o = (y * width + x) * 4;
+      total += 1;
+      if (
+        Math.abs(rgba[o] - 204) <= 2 &&
+        Math.abs(rgba[o + 1] - 204) <= 2 &&
+        Math.abs(rgba[o + 2] - 204) <= 2
+      )
+        grey += 1;
+    }
+  }
+  return total > 0 && grey / total > 0.8;
+}
+
 const inflight = new Set();
 // Bounded fetch concurrency per worker: the browser refuses work (ERR_INSUFFICIENT_RESOURCES)
 // when many workers each start dozens of tile requests at once.
@@ -65,6 +88,7 @@ async function loadTile(source, z, x, y) {
       return null;
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const image = await decode(await response.blob());
+    if (source.id === 'esri' && isEsriPlaceholder(image)) return null;
     if (source.format === 'terrarium') {
       return {
         width: image.width,
@@ -122,6 +146,7 @@ self.onmessage = async (event) => {
       const transfer = [
         result.position.buffer,
         result.normal.buffer,
+        result.bedNormal.buffer,
         result.bed.buffer,
         result.up.buffer,
         result.domain.buffer,

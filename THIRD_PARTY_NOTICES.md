@@ -45,3 +45,20 @@ Street Level viewer; the complete resolved dependency inventory remains in
 - Source: <https://github.com/mrdoob/three.js>
 - License: MIT
 - License text: <https://github.com/mrdoob/three.js/blob/dev/LICENSE>
+
+## three.js (flat world renderer)
+
+- Package: `three` 0.186.1 (including the `examples/jsm` add-ons Sky, Line2,
+  LineSegments2, LineMaterial and their geometries)
+- Author: Copyright © 2010-2026 three.js authors
+- Source: <https://github.com/mrdoob/three.js>
+- License: MIT
+- License text: <https://github.com/mrdoob/three.js/blob/dev/LICENSE>
+
+## GeographicLib geodesic routines (flat world route comparison)
+
+- Package: `geographiclib-geodesic` 2.2.0
+- Author: Copyright (c) Charles Karney (2011-2022)
+- Source: <https://github.com/geographiclib/geographiclib-js>
+- License: MIT
+- License text: <https://github.com/geographiclib/geographiclib-js/blob/main/LICENSE.txt>

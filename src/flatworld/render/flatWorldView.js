@@ -151,7 +151,8 @@ export class FlatWorldView {
     if (active) {
       this.resize();
       this.clock.getDelta();
-      requestAnimationFrame(this._loop);
+      // One loop only, even if the view is toggled off and on within a single frame.
+      if (!this._rafId) this._rafId = requestAnimationFrame(this._loop);
     }
   }
 
@@ -167,7 +168,9 @@ export class FlatWorldView {
       x = this.camera.position.x;
       y = -this.camera.position.z;
     }
-    const ground = this.chunks.heightAt(x, y) ?? 0;
+    const sampled = this.chunks.heightAt(x, y);
+    // No terrain loaded yet: the height is unknown, not 0 m.
+    const ground = sampled ?? 0;
     const altitude = this.camera.position.y - ground;
     const dir = new THREE.Vector3();
     this.camera.getWorldDirection(dir);
@@ -180,7 +183,12 @@ export class FlatWorldView {
       cameraHeight: this.camera.position.y,
       heading: yawToHeading(yaw, x, y),
       pitchDeg: (Math.asin(Math.max(-1, Math.min(1, dir.y))) * 180) / Math.PI,
-      domain: this.frame.worldToDomain(x, y, ground / this.chunks.exaggeration),
+      domain: this.frame.worldToDomain(
+        x,
+        y,
+        sampled === null ? NaN : ground / this.chunks.exaggeration,
+      ),
+      groundKnown: sampled !== null,
     };
   }
 
@@ -357,7 +365,9 @@ export class FlatWorldView {
     cam.near = 1;
     cam.far = extent * 10;
     cam.updateProjectionMatrix();
-    this.sun.castShadow = alt < 60000;
+    // Shadow maps are float32 on the GPU: beyond ~3e7 m from the disc centre their depth
+    // comparisons lose precision and darken everything, so shadows are off that far out.
+    this.sun.castShadow = alt < 60000 && Math.hypot(focus.x, focus.y) < 3.0e7;
 
     // Sky and atmosphere fade into space with altitude.
     const space = THREE.MathUtils.smoothstep(alt, 25000, 220000);
@@ -387,8 +397,9 @@ export class FlatWorldView {
   }
 
   _loop() {
+    this._rafId = 0;
     if (!this.active) return;
-    requestAnimationFrame(this._loop);
+    this._rafId = requestAnimationFrame(this._loop);
     const t0 = performance.now();
     const dt = Math.min(this.clock.getDelta(), 0.1);
     this.controls.update(dt);

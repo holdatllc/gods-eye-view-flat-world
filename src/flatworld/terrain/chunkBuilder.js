@@ -16,6 +16,10 @@ import { ELEVATION_SOURCES, IMAGERY_SOURCES } from '../sources/catalog.js';
 const DEG = Math.PI / 180;
 /** Mapterhorn is used when the needed ground resolution is finer than ETOPO's ~1.8 km. */
 const FINE_TERRAIN_BELOW_M = 1500;
+/** Mapterhorn's web-mercator coverage ends at ±85.05°; its last rows are unreliable. */
+const MAPTERHORN_MAX_LAT = 84.9;
+/** Latitude whose real imagery colour seeds the ice colour at the South-Pole circle. */
+const RIM_COLOUR_LAT = -89.95;
 const ESRI_FULL_LAT = 81.0;
 const ESRI_MAX_LAT = 85.0;
 
@@ -95,7 +99,9 @@ export function createChunkBuilder({
         vRes[k] = res;
         const etopo = ELEVATION_SOURCES.etopo;
         sampler.request(etopo, d.lat, d.lon, etopo.scheme.zoomFor(res));
-        if (res < FINE_TERRAIN_BELOW_M && Math.abs(d.lat) < 85) {
+        if (Math.abs(d.lat) < MAPTERHORN_MAX_LAT) {
+          // Requested at every resolution: besides fine detail it is the land/sea mask (it is
+          // land-only, oceans read 0), which keeps dry land below sea level dry at coarse zoom.
           const mt = ELEVATION_SOURCES.mapterhorn;
           sampler.request(mt, d.lat, d.lon, mt.scheme.zoomFor(res, d.lat));
         }
@@ -115,6 +121,18 @@ export function createChunkBuilder({
     const lights = IMAGERY_SOURCES.gibsBlackMarble;
     const arctic = IMAGERY_SOURCES.modisArctic;
     const tZoomLights = new Int8Array(T * T);
+    // One Esri zoom per chunk (from its centre) avoids tonal seams where per-texel zoom would
+    // switch along curves of constant latitude; very large chunks still choose per texel.
+    const rimZoom = Math.min(gibs.scheme.zoomFor(texStep), 5);
+    let chunkEsriZoom = -1;
+    if (size < 600000) {
+      const c = frame.worldToDomain(x0 + size / 2, y0 + size / 2);
+      if (c.domain !== DOMAIN_ICE && Math.abs(c.lat) < ESRI_MAX_LAT)
+        chunkEsriZoom = esri.scheme.zoomFor(
+          groundResolution(texStep, c.lat),
+          c.lat,
+        );
+    }
     for (let j = 0; j < T; j += 1) {
       for (let i = 0; i < T; i += 1) {
         const k = j * T + i;
@@ -123,6 +141,14 @@ export function createChunkBuilder({
         const d = frame.worldToDomain(x, y);
         if (d.domain === DOMAIN_ICE) {
           tIce[k] = 1;
+          // Near the circle, the ice colour blends from the real South-Pole imagery colour along
+          // this rim direction (visual continuity only; the ice still has no lat/lon).
+          if (d.distanceBeyondPole < ice.params.transitionM) {
+            const p = frame.fromDisplay(x, y);
+            const lam = (Math.atan2(p.x, -p.y) * 180) / Math.PI;
+            tLon[k] = lam;
+            sampler.request(gibs, RIM_COLOUR_LAT, lam, rimZoom);
+          } else tLon[k] = NaN;
           continue;
         }
         tLat[k] = d.lat;
@@ -130,7 +156,10 @@ export function createChunkBuilder({
         const res = groundResolution(texStep, d.lat);
         const absLat = Math.abs(d.lat);
         if (absLat < ESRI_MAX_LAT) {
-          tZoomEsri[k] = esri.scheme.zoomFor(res, d.lat);
+          tZoomEsri[k] =
+            chunkEsriZoom >= 0
+              ? chunkEsriZoom
+              : esri.scheme.zoomFor(res, d.lat);
           sampler.request(esri, d.lat, d.lon, tZoomEsri[k]);
         } else tZoomEsri[k] = -1;
         if (absLat > ESRI_FULL_LAT) {
@@ -156,7 +185,7 @@ export function createChunkBuilder({
     const iceSamples = new Array(n);
     for (let k = 0; k < n; k += 1) {
       if (vIce[k]) {
-        const s = ice.sample(vx[k], vy[k]);
+        const s = ice.sample(vx[k], vy[k], step);
         iceSamples[k] = s;
         hSurf[k] = s.height;
         hBed[k] = s.height;
@@ -175,7 +204,7 @@ export function createChunkBuilder({
       if (!Number.isFinite(hEtopo)) hEtopo = 0;
       let h = hEtopo;
       let w = hEtopo < 0 ? 1 : 0;
-      if (res < FINE_TERRAIN_BELOW_M && Math.abs(lat) < 85) {
+      if (Math.abs(lat) < MAPTERHORN_MAX_LAT) {
         const mt = ELEVATION_SOURCES.mapterhorn;
         const hm = sampler.sampleHeight(
           mt,
@@ -184,11 +213,19 @@ export function createChunkBuilder({
           mt.scheme.zoomFor(res, lat),
         );
         if (Number.isFinite(hm)) {
-          // Mapterhorn is land-only (oceans read 0); ETOPO supplies bathymetry there.
-          if (Math.abs(hm) < 0.5 && hEtopo < -2) {
+          const zero = Math.abs(hm) < 0.5;
+          if (zero && hEtopo < -2) {
+            // Open water: Mapterhorn is land-only, ETOPO supplies the sea floor.
             w = 1;
-          } else {
+          } else if (zero && hEtopo > 50) {
+            // Mapterhorn has no data here (e.g. its 85°S edge over the Antarctic ice sheet):
+            // a 0 m reading is not real, keep the ETOPO surface.
+            w = 0;
+          } else if (res < FINE_TERRAIN_BELOW_M || hEtopo < 0) {
+            // Fine detail, or dry land below sea level (Death Valley, Qattara, Dead Sea shore).
             h = hm;
+            w = 0;
+          } else {
             w = 0;
           }
         }
@@ -204,6 +241,7 @@ export function createChunkBuilder({
     const total = V + S;
     const position = new Float32Array(total * 3);
     const normal = new Float32Array(total * 3);
+    const bedNormal = new Float32Array(total * 3);
     const bed = new Float32Array(total);
     const up = new Float32Array(total * 3);
     const domain = new Float32Array(total);
@@ -230,6 +268,13 @@ export function createChunkBuilder({
       normal[dst * 3] = nx / len;
       normal[dst * 3 + 1] = ny / len;
       normal[dst * 3 + 2] = nz / len;
+      // Sea-floor normals for DRAIN OCEANS (bathymetry relief shading).
+      const bx = -(hBed[k + 1] - hBed[k - 1]) / (2 * step);
+      const bz = (hBed[k + W] - hBed[k - W]) / (2 * step);
+      const blen = Math.hypot(bx, 1, bz);
+      bedNormal[dst * 3] = bx / blen;
+      bedNormal[dst * 3 + 1] = 1 / blen;
+      bedNormal[dst * 3 + 2] = bz / blen;
       if (vIce[k]) {
         // The ice domain shares the South Pole's sky: its up-vector is the pole's, taken along the
         // rim longitude in this direction, so lighting is continuous across the circle. (This is a
@@ -313,9 +358,16 @@ export function createChunkBuilder({
           scratch.blueIce = lerp('blueIce');
           scratch.snow = lerp('snow');
           scratch.crevasse = tr * ice.crevasseAt(x, y, zone);
-          const gi = Math.min(G, Math.round(((i + 0.5) / T) * G));
-          const gj = Math.min(G, Math.round(((j + 0.5) / T) * G));
-          const ny = normal[(gj * (G + 1) + gi) * 3 + 1];
+          const gx = Math.min(((i + 0.5) / T) * G, G - 1e-9);
+          const gy = Math.min(((j + 0.5) / T) * G, G - 1e-9);
+          const gi = Math.floor(gx);
+          const gj = Math.floor(gy);
+          const gu = gx - gi;
+          const gv = gy - gj;
+          const nyAt = (a, b) => normal[(b * (G + 1) + a) * 3 + 1];
+          const ny =
+            (nyAt(gi, gj) * (1 - gu) + nyAt(gi + 1, gj) * gu) * (1 - gv) +
+            (nyAt(gi, gj + 1) * (1 - gu) + nyAt(gi + 1, gj + 1) * gu) * gv;
           const col = iceColor(
             scratch,
             x,
@@ -323,6 +375,21 @@ export function createChunkBuilder({
             Math.sqrt(Math.max(0, 1 - ny * ny)),
             ice.params.seed,
           );
+          if (tr < 1 && Number.isFinite(tLon[k])) {
+            const rim = sampler.sampleColor(
+              gibs,
+              RIM_COLOUR_LAT,
+              tLon[k],
+              rimZoom,
+              c2,
+            );
+            if (rim) {
+              const w = tr * tr * (3 - 2 * tr);
+              col[0] = rim[0] * (1 - w) + col[0] * w;
+              col[1] = rim[1] * (1 - w) + col[1] * w;
+              col[2] = rim[2] * (1 - w) + col[2] * w;
+            }
+          }
           rgba[o] = col[0];
           rgba[o + 1] = col[1];
           rgba[o + 2] = col[2];
@@ -391,8 +458,11 @@ export function createChunkBuilder({
       maxH: Number.isFinite(maxH) ? maxH : 0,
       domainMix: iceTexels && gpsTexels ? 'mixed' : iceTexels ? 'ice' : 'gps',
       timing: { tilesRequested, resolveMs },
+      // A source tile failed transiently (network/5xx/timeout): the manager rebuilds it later.
+      incomplete: sampler.incomplete,
       position,
       normal,
+      bedNormal,
       bed,
       up,
       domain,

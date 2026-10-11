@@ -98,10 +98,33 @@ export const VECTOR_SOURCES = Object.freeze({
   },
 });
 
+/** Natural Earth coastlines/borders bundled with the app (drawn by overlays/vectorLines.js). */
+export const NATURAL_EARTH_ATTRIBUTION =
+  'Coastlines and borders: Made with Natural Earth (public domain)';
+
 export function allAttributions() {
   return [
     ...Object.values(IMAGERY_SOURCES),
     ...Object.values(ELEVATION_SOURCES),
     ...Object.values(VECTOR_SOURCES),
-  ].map((s) => s.attribution);
+  ]
+    .map((s) => s.attribution)
+    .concat(NATURAL_EARTH_ATTRIBUTION);
+}
+
+/**
+ * Compact, always-visible credit line for the flat world (the globe's Cesium credit bar is hidden
+ * while it is shown). Links point at each provider's own attribution or licence page.
+ */
+export function attributionHtml() {
+  const link = (href, text) =>
+    `<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+  return [
+    `Powered by ${link('https://www.esri.com/', 'Esri')}: Esri, Maxar, Earthstar Geographics, and the GIS User Community`,
+    `Terrain ${link('https://mapterhorn.com/attribution', '© Mapterhorn')} (${link('https://creativecommons.org/licenses/by/4.0/', 'CC BY 4.0')})`,
+    `${link('https://www.ncei.noaa.gov/products/etopo-global-relief-model', 'NOAA ETOPO 2022')}`,
+    `NASA ${link('https://earthdata.nasa.gov/gibs', 'GIBS')} Blue/Black Marble, MODIS`,
+    `${link('https://www.openstreetmap.org/copyright', '© OpenStreetMap contributors')} via ${link('https://openfreemap.org/', 'OpenFreeMap')}`,
+    `${link('https://www.naturalearthdata.com/', 'Natural Earth')}`,
+  ].join(' · ');
 }

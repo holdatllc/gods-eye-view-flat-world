@@ -67,3 +67,41 @@ test('geodesicRoute samples start and end at the endpoints', () => {
   assert.equal(g.points.length, 11);
   assert.ok(Math.abs(g.points[10].lon - 90) < 1e-9);
 });
+
+test('geodesic image near and through the South Pole: short chords, split at the pole', () => {
+  const frame = createWorldFrame();
+  const near = compareRoutes(
+    frame,
+    frame.geodeticToWorld(-80, 0),
+    frame.geodeticToWorld(-80, 179.9),
+  );
+  assert.equal(near.geodesic.crossesSouthPole, false);
+  // Converged image length from the independent review: 64,590 km.
+  assert.ok(
+    Math.abs(near.geodesic.lengthOnMapM - 64590e3) < 50e3,
+    `${near.geodesic.lengthOnMapM}`,
+  );
+  for (const seg of near.geodesic.segments)
+    for (let i = 1; i < seg.length; i += 1)
+      assert.ok(
+        Math.hypot(seg[i].x - seg[i - 1].x, seg[i].y - seg[i - 1].y) < 60000,
+      );
+  const through = compareRoutes(
+    frame,
+    frame.geodeticToWorld(-80, 0),
+    frame.geodeticToWorld(-80, 180),
+  );
+  assert.equal(through.geodesic.crossesSouthPole, true);
+  assert.ok(Number.isNaN(through.geodesic.lengthOnMapM));
+  assert.equal(through.geodesic.segments.length, 2);
+  // Mid-latitude routes are unchanged (London–New York image ≈ 5,994 km).
+  const ln = compareRoutes(
+    frame,
+    frame.geodeticToWorld(51.5074, -0.1278),
+    frame.geodeticToWorld(40.7128, -74.006),
+  );
+  assert.ok(
+    Math.abs(ln.geodesic.lengthOnMapM - 5993.74e3) < 2e3,
+    `${ln.geodesic.lengthOnMapM}`,
+  );
+});

@@ -64,6 +64,8 @@ export class FlatWorldControls {
     this.listeners = [];
     this.enabled = false;
     this.onChange = () => {};
+    /** Called when the user moves the camera themselves (e.g. to end tracking). */
+    this.onUserInput = () => {};
     this._bind();
   }
 
@@ -84,6 +86,11 @@ export class FlatWorldControls {
         y: e.clientY,
         button: e.button,
         shift: e.shiftKey || e.ctrlKey || e.altKey,
+        // Grab-pan: the ground point under the cursor stays under it while dragging.
+        grab:
+          this.mode === 'orbit'
+            ? this.groundUnderCursor(e.clientX, e.clientY)
+            : null,
       };
     });
     this._on(el, 'pointerup', (e) => {
@@ -97,11 +104,22 @@ export class FlatWorldControls {
       drag.x = e.clientX;
       drag.y = e.clientY;
       const rotate = drag.button === 2 || drag.shift;
+      if (Math.hypot(dx, dy) > 0) this.onUserInput();
       if (this.mode === 'orbit') {
         if (rotate) {
           this.yaw -= dx * 0.005;
           this.pitch = clamp(this.pitch + dy * 0.004, 0.05, Math.PI / 2 - 1e-3);
-        } else this._pan(dx, dy);
+          drag.grab = null;
+        } else {
+          const now = drag.grab
+            ? this.groundUnderCursor(e.clientX, e.clientY)
+            : null;
+          if (drag.grab && now) {
+            this.target.x += drag.grab.x - now.x;
+            this.target.y += drag.grab.y - now.y;
+            this.update(0); // re-pose the camera so the next ray uses the moved target
+          } else this._pan(dx, dy);
+        }
       } else {
         this.lookYaw -= dx * 0.004;
         this.lookPitch = clamp(this.lookPitch - dy * 0.004, -1.5, 1.5);
@@ -114,6 +132,7 @@ export class FlatWorldControls {
       (e) => {
         if (!this.enabled) return;
         e.preventDefault();
+        this.onUserInput();
         if (this.mode === 'orbit') this._zoom(e.deltaY, e.clientX, e.clientY);
         else
           this.speedBoost = clamp(
@@ -136,33 +155,59 @@ export class FlatWorldControls {
         a &&
         (a.tagName === 'INPUT' ||
           a.tagName === 'TEXTAREA' ||
+          a.tagName === 'SELECT' ||
           a.isContentEditable)
       );
     };
-    this._on(window, 'keydown', (e) => {
-      if (!this.enabled || typing()) return;
-      const k = e.key.toLowerCase();
-      if (
-        [
-          'w',
-          'a',
-          's',
-          'd',
-          'q',
-          'e',
-          'shift',
-          ' ',
-          'arrowup',
-          'arrowdown',
-          'arrowleft',
-          'arrowright',
-        ].includes(k)
-      ) {
-        this.keys.add(k);
-        if (this.mode !== 'orbit' || k.startsWith('arrow')) e.preventDefault();
-      }
-    });
-    this._on(window, 'keyup', (e) => this.keys.delete(e.key.toLowerCase()));
+    const MOVE_KEYS = [
+      'w',
+      'a',
+      's',
+      'd',
+      'q',
+      'e',
+      'shift',
+      ' ',
+      'arrowup',
+      'arrowdown',
+      'arrowleft',
+      'arrowright',
+    ];
+    // Capture phase on window: while the flat world is shown, the globe's own keyboard shortcuts
+    // (voice push-to-talk on Space, detection-mode cycling on D, …) must not fire.
+    const owns = (e) =>
+      this.enabled &&
+      !typing() &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey &&
+      e.key !== 'Escape' &&
+      !/^F\d+$/.test(e.key);
+    this._on(
+      window,
+      'keydown',
+      (e) => {
+        if (!owns(e)) return;
+        e.stopImmediatePropagation();
+        const k = e.key.toLowerCase();
+        if (MOVE_KEYS.includes(k)) {
+          this.keys.add(k);
+          if (this.mode !== 'orbit' || k.startsWith('arrow') || k === ' ')
+            e.preventDefault();
+          this.onUserInput();
+        }
+      },
+      { capture: true },
+    );
+    this._on(
+      window,
+      'keyup',
+      (e) => {
+        this.keys.delete(e.key.toLowerCase());
+        if (owns(e)) e.stopImmediatePropagation();
+      },
+      { capture: true },
+    );
     this._on(window, 'blur', () => this.keys.clear());
   }
 
@@ -189,7 +234,8 @@ export class FlatWorldControls {
     const factor = Math.exp(deltaY * 0.0015);
     const newDistance = clamp(this.distance * factor, 2, 2.5e8);
     const p = this.groundUnderCursor(clientX, clientY);
-    if (p && factor < 1) {
+    if (p) {
+      // Zooming in moves toward the cursor point, zooming out away from it (it stays put).
       const t = 1 - newDistance / this.distance;
       this.target.x += (p.x - this.target.x) * t;
       this.target.y += (p.y - this.target.y) * t;
