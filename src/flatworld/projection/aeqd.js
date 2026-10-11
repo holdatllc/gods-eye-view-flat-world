@@ -103,7 +103,12 @@ export function createPolarAeqd({ ellipsoid = WGS84, lon0 = 0 } = {}) {
    * The North Pole maps to (0,0); every longitude at the South Pole maps onto the rim circle.
    */
   function forward(lat, lon) {
-    if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90) {
+    if (
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lon) ||
+      lat < -90 ||
+      lat > 90
+    ) {
       return { x: NaN, y: NaN, rho: NaN };
     }
     const rho = quarterMeridian - meridianArc(lat * DEG);
@@ -141,7 +146,8 @@ export function createPolarAeqd({ ellipsoid = WGS84, lon0 = 0 } = {}) {
    * Tangential (along parallels) is rho / (N cos φ); it is infinite at the South Pole.
    */
   function scaleFactors(lat) {
-    if (!Number.isFinite(lat) || lat < -90 || lat > 90) return { h: NaN, k: NaN, arealDistortion: NaN };
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90)
+      return { h: NaN, k: NaN, arealDistortion: NaN };
     // The projection is true to scale at its centre; near it rho is a difference of two nearly
     // equal arcs, so use the limit there.
     if (lat >= 90 - 1e-7) return { h: 1, k: 1, arealDistortion: 1 };

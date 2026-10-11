@@ -6,7 +6,12 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { ChunkManager } from '../terrain/chunkManager.js';
-import { FlatWorldControls, headingToYaw, northAt, yawToHeading } from './controls.js';
+import {
+  FlatWorldControls,
+  headingToYaw,
+  northAt,
+  yawToHeading,
+} from './controls.js';
 import { createWorldFrame, DOMAIN_GPS } from '../projection/domains.js';
 import { sunEcef, sunLocal } from './sun.js';
 
@@ -79,7 +84,12 @@ export class FlatWorldView {
       groundHeight: (x, y) => this.chunks.heightAt(x, y),
     });
 
-    this.time = { date: null, iceSky: 'pole', iceSunElevationDeg: 14, iceSunAzimuthDeg: 210 };
+    this.time = {
+      date: null,
+      iceSky: 'pole',
+      iceSunElevationDeg: 14,
+      iceSunAzimuthDeg: 210,
+    };
     this.weather = null;
     this.layers = new Set();
     this.active = false;
@@ -95,7 +105,7 @@ export class FlatWorldView {
     const n = 6000;
     const pos = new Float32Array(n * 3);
     let seed = 7;
-    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     for (let i = 0; i < n; i += 1) {
       const u = rnd() * 2 - 1;
       const t = rnd() * Math.PI * 2;
@@ -106,7 +116,14 @@ export class FlatWorldView {
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    const m = new THREE.PointsMaterial({ color: 0x000000, size: 1.6, sizeAttenuation: false, fog: false, depthTest: false, depthWrite: false });
+    const m = new THREE.PointsMaterial({
+      color: 0x000000,
+      size: 1.6,
+      sizeAttenuation: false,
+      fog: false,
+      depthTest: false,
+      depthWrite: false,
+    });
     const p = new THREE.Points(g, m);
     p.renderOrder = -9;
     p.frustumCulled = false;
@@ -168,32 +185,64 @@ export class FlatWorldView {
   }
 
   /** Point the orbit camera at a real geodetic location. */
-  lookAtGeodetic({ lat, lon, range = 2e6, headingDeg = 0, pitchDeg = -90, animate = false }) {
+  lookAtGeodetic({
+    lat,
+    lon,
+    range = 2e6,
+    headingDeg = 0,
+    pitchDeg = -90,
+    animate = false,
+  }) {
     const w = this.frame.geodeticToWorld(lat, lon, 0);
     if (!w) return;
     this.controls.setMode('orbit');
     const yaw = headingToYaw(headingDeg, w.x, w.y);
-    const pitch = Math.min(Math.max((-pitchDeg * Math.PI) / 180, 0.05), Math.PI / 2 - 1e-3);
-    if (animate) this.controls.flyTo({ x: w.x, y: w.y, distance: range, yaw, pitch });
+    const pitch = Math.min(
+      Math.max((-pitchDeg * Math.PI) / 180, 0.05),
+      Math.PI / 2 - 1e-3,
+    );
+    if (animate)
+      this.controls.flyTo({ x: w.x, y: w.y, distance: range, yaw, pitch });
     else {
       Object.assign(this.controls, { distance: range, yaw, pitch });
-      this.controls.target = { x: w.x, y: w.y, h: this.chunks.heightAt(w.x, w.y) ?? 0 };
+      this.controls.target = {
+        x: w.x,
+        y: w.y,
+        h: this.chunks.heightAt(w.x, w.y) ?? 0,
+      };
     }
   }
 
   lookAtPlane({ x, y, range = 2e5, yaw, pitch, animate = true }) {
     this.controls.setMode('orbit');
-    const target = { x, y, distance: range, yaw: yaw ?? this.controls.yaw, pitch: pitch ?? this.controls.pitch };
+    const target = {
+      x,
+      y,
+      distance: range,
+      yaw: yaw ?? this.controls.yaw,
+      pitch: pitch ?? this.controls.pitch,
+    };
     if (animate) this.controls.flyTo(target);
     else {
-      Object.assign(this.controls, { distance: range, yaw: target.yaw, pitch: target.pitch });
+      Object.assign(this.controls, {
+        distance: range,
+        yaw: target.yaw,
+        pitch: target.pitch,
+      });
       this.controls.target = { x, y, h: this.chunks.heightAt(x, y) ?? 0 };
     }
   }
 
   /** Whole-disc overview in the Gleason orientation (90°E up). */
   overview() {
-    this.lookAtPlane({ x: 0, y: 0, range: 5.4e7, yaw: Math.PI / 2, pitch: Math.PI / 2 - 1e-3, animate: true });
+    this.lookAtPlane({
+      x: 0,
+      y: 0,
+      range: 5.4e7,
+      yaw: Math.PI / 2,
+      pitch: Math.PI / 2 - 1e-3,
+      animate: true,
+    });
   }
 
   /** Project a three.js world point to CSS pixels, or null when behind the camera. */
@@ -221,12 +270,19 @@ export class FlatWorldView {
     const x = hit.point.x;
     const y = -hit.point.z;
     const height = hit.point.y / this.chunks.exaggeration;
-    return { x, y, point: hit.point, domain: this.frame.worldToDomain(x, y, height) };
+    return {
+      x,
+      y,
+      point: hit.point,
+      domain: this.frame.worldToDomain(x, y, height),
+    };
   }
 
   _updateEnvironment() {
     const focus = this.getFocus();
-    const date = this.time.date ?? new Date(Date.now() + (this.time.offsetMinutes || 0) * 60000);
+    const date =
+      this.time.date ??
+      new Date(Date.now() + (this.time.offsetMinutes || 0) * 60000);
     const s = sunEcef(date);
     this.chunks.material.uniforms.uSunEcef.value.set(s[0], s[1], s[2]);
 
@@ -256,7 +312,10 @@ export class FlatWorldView {
       east = Math.cos(el) * Math.sin(az);
       north = Math.cos(el) * Math.cos(az);
       up = Math.sin(el);
-      this.chunks.material.uniforms.uIceDay.value = Math.max(0.15, Math.min(1, (up + 0.1) / 0.2));
+      this.chunks.material.uniforms.uIceDay.value = Math.max(
+        0.15,
+        Math.min(1, (up + 0.1) / 0.2),
+      );
     }
     const n = northAt(focus.x, focus.y);
     const e = { x: n.y, y: -n.x };
@@ -278,7 +337,11 @@ export class FlatWorldView {
     {
       const el = (this.time.iceSunElevationDeg * Math.PI) / 180;
       const az = (this.time.iceSunAzimuthDeg * Math.PI) / 180;
-      u.uIceSun.value.set(Math.cos(el) * Math.sin(az), Math.cos(el) * Math.cos(az), Math.sin(el));
+      u.uIceSun.value.set(
+        Math.cos(el) * Math.sin(az),
+        Math.cos(el) * Math.cos(az),
+        Math.sin(el),
+      );
     }
 
     // Shadow frustum follows the focus and shrinks with altitude.
@@ -308,10 +371,17 @@ export class FlatWorldView {
     this.renderer.setClearColor(0x000000, 1);
     const weatherFog = this.weather?.fogDensity?.(focus) ?? 0;
     const haze = 1 / Math.max(6e4, alt * 25);
-    this.scene.fog.density = (haze * (1 - space) + weatherFog) * (0.35 + 0.65 * day);
+    this.scene.fog.density =
+      (haze * (1 - space) + weatherFog) * (0.35 + 0.65 * day);
     // Fog matches the sky near the horizon so distant terrain fades into it, not against it.
-    const horizon = new THREE.Color(0.78, 0.86, 0.95).multiplyScalar(0.18 + 0.82 * day);
-    if (weatherFog > 0) horizon.lerp(new THREE.Color(0.93, 0.95, 0.98).multiplyScalar(0.3 + 0.7 * day), Math.min(1, weatherFog * 4000));
+    const horizon = new THREE.Color(0.78, 0.86, 0.95).multiplyScalar(
+      0.18 + 0.82 * day,
+    );
+    if (weatherFog > 0)
+      horizon.lerp(
+        new THREE.Color(0.93, 0.95, 0.98).multiplyScalar(0.3 + 0.7 * day),
+        Math.min(1, weatherFog * 4000),
+      );
     this.scene.fog.color.copy(horizon);
     this.focus = focus;
   }
@@ -322,7 +392,9 @@ export class FlatWorldView {
     const t0 = performance.now();
     const dt = Math.min(this.clock.getDelta(), 0.1);
     this.controls.update(dt);
-    const g = this.chunks.heightAt(this.camera.position.x, -this.camera.position.z) ?? 0;
+    const g =
+      this.chunks.heightAt(this.camera.position.x, -this.camera.position.z) ??
+      0;
     const agl = Math.max(this.camera.position.y - g, 0.5);
     this.camera.near = Math.min(Math.max(agl * 0.002, 0.05), 2000);
     this.camera.far = 2e9;
@@ -341,7 +413,8 @@ export class FlatWorldView {
 
   diagnostics() {
     const times = [...this.frameStats.times].sort((a, b) => a - b);
-    const pct = (p) => times[Math.min(times.length - 1, Math.floor(p * times.length))] ?? null;
+    const pct = (p) =>
+      times[Math.min(times.length - 1, Math.floor(p * times.length))] ?? null;
     const info = this.renderer.info;
     return {
       frames: this.frameStats.frames,
@@ -353,8 +426,15 @@ export class FlatWorldView {
       chunksPending: this.chunks.pending.size,
       chunkStats: { ...this.chunks.stats },
       estimatedChunkMemoryMB: this.chunks.memoryEstimate() / 1048576,
-      gpu: { geometries: info.memory.geometries, textures: info.memory.textures, calls: info.render.calls, triangles: info.render.triangles },
-      jsHeapMB: performance.memory ? performance.memory.usedJSHeapSize / 1048576 : null,
+      gpu: {
+        geometries: info.memory.geometries,
+        textures: info.memory.textures,
+        calls: info.render.calls,
+        triangles: info.render.triangles,
+      },
+      jsHeapMB: performance.memory
+        ? performance.memory.usedJSHeapSize / 1048576
+        : null,
       focus: this.focus,
     };
   }

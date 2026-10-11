@@ -10,7 +10,11 @@ export const MERCATOR_MAX_LAT = 85.0511287798066;
 const EARTH_CIRCUMFERENCE = 40075016.685578488; // WGS84 equatorial (web-mercator sphere)
 
 /** Web-mercator (EPSG:3857) XYZ tiling. */
-export function webMercatorScheme({ tileSize = 256, maxZoom = 19, minZoom = 0 } = {}) {
+export function webMercatorScheme({
+  tileSize = 256,
+  maxZoom = 19,
+  minZoom = 0,
+} = {}) {
   return {
     kind: 'mercator',
     tileSize,
@@ -18,17 +22,23 @@ export function webMercatorScheme({ tileSize = 256, maxZoom = 19, minZoom = 0 } 
     minZoom,
     covers: (lat) => Math.abs(lat) <= MERCATOR_MAX_LAT,
     /** Ground metres per pixel at zoom z on the given latitude. */
-    resolution: (z, lat) => (EARTH_CIRCUMFERENCE * Math.cos(lat * DEG)) / (tileSize * 2 ** z),
+    resolution: (z, lat) =>
+      (EARTH_CIRCUMFERENCE * Math.cos(lat * DEG)) / (tileSize * 2 ** z),
     /** Zoom whose resolution is at least as fine as `metresPerPixel`. */
     zoomFor(metresPerPixel, lat) {
       const c = Math.max(Math.cos(lat * DEG), 1e-6);
-      const z = Math.ceil(Math.log2((EARTH_CIRCUMFERENCE * c) / (tileSize * metresPerPixel)));
+      const z = Math.ceil(
+        Math.log2((EARTH_CIRCUMFERENCE * c) / (tileSize * metresPerPixel)),
+      );
       return Math.max(minZoom, Math.min(maxZoom, z));
     },
     /** Global pixel coordinates (floating) at zoom z. */
     pixel(lat, lon, z) {
       const n = tileSize * 2 ** z;
-      const clamped = Math.max(-MERCATOR_MAX_LAT, Math.min(MERCATOR_MAX_LAT, lat));
+      const clamped = Math.max(
+        -MERCATOR_MAX_LAT,
+        Math.min(MERCATOR_MAX_LAT, lat),
+      );
       const s = Math.sin(clamped * DEG);
       const px = ((lon + 180) / 360) * n;
       const py = (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * n;
@@ -54,7 +64,9 @@ export function geographicScheme({
     covers: () => true,
     resolution: (z) => ((rootSpanDeg / 2 ** z) * 111320) / tileSize,
     zoomFor(metresPerPixel) {
-      const z = Math.ceil(Math.log2((rootSpanDeg * 111320) / (tileSize * metresPerPixel)));
+      const z = Math.ceil(
+        Math.log2((rootSpanDeg * 111320) / (tileSize * metresPerPixel)),
+      );
       return Math.max(0, Math.min(maxZoom, z));
     },
     pixel(lat, lon, z) {

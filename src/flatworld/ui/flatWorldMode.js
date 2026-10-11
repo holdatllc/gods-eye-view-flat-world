@@ -29,10 +29,17 @@ export class FlatWorldMode {
     const scene = this.viewer.scene;
     const saved = {
       destination: Cesium.Cartesian3.clone(camera.positionWC),
-      orientation: { heading: camera.heading, pitch: camera.pitch, roll: camera.roll },
+      orientation: {
+        heading: camera.heading,
+        pitch: camera.pitch,
+        roll: camera.roll,
+      },
     };
     const canvas = scene.canvas;
-    const center = new Cesium.Cartesian2(canvas.clientWidth / 2, canvas.clientHeight / 2);
+    const center = new Cesium.Cartesian2(
+      canvas.clientWidth / 2,
+      canvas.clientHeight / 2,
+    );
     let focus = null;
     const hit = camera.pickEllipsoid(center, scene.globe.ellipsoid);
     const carto = camera.positionCartographic;
@@ -76,7 +83,14 @@ export class FlatWorldMode {
     const range = Math.min(globe.focus.range, 5.4e7);
     this.view.lookAtGeodetic({ ...globe.focus, range, pitchDeg: pitch });
     const c0 = this.view.controls;
-    this.entryFocus = { lat: globe.focus.lat, lon: globe.focus.lon, range, yaw: c0.yaw, pitch: c0.pitch, mode: c0.mode };
+    this.entryFocus = {
+      lat: globe.focus.lat,
+      lon: globe.focus.lon,
+      range,
+      yaw: c0.yaw,
+      pitch: c0.pitch,
+      mode: c0.mode,
+    };
     this.viewer.useDefaultRenderLoop = false;
     this.viewer.container.style.visibility = 'hidden';
     document.body.classList.add('flatworld-active');
@@ -92,7 +106,11 @@ export class FlatWorldMode {
     if (!f || f.domain.domain !== DOMAIN_GPS) return;
     const height = Math.min(Math.max(f.altitude, 2000), 2.0e7);
     this.viewer.camera.setView({
-      destination: Cesium.Cartesian3.fromDegrees(f.domain.lon, f.domain.lat, height),
+      destination: Cesium.Cartesian3.fromDegrees(
+        f.domain.lon,
+        f.domain.lat,
+        height,
+      ),
       orientation: { heading: 0, pitch: -Math.PI / 2, roll: 0 },
     });
   }
@@ -117,9 +135,13 @@ export class FlatWorldMode {
       // Fly/walk: put the globe camera at the same eye point, looking the same way (review D9).
       const e = this.view.chunks.exaggeration;
       const ground = this.view.chunks.heightAt(eye.x, -eye.z) ?? 0;
-      const height = Math.max((eye.y - ground) + ground / e, 2);
+      const height = Math.max(eye.y - ground + ground / e, 2);
       camera.setView({
-        destination: Cesium.Cartesian3.fromDegrees(eyeDomain.lon, eyeDomain.lat, height),
+        destination: Cesium.Cartesian3.fromDegrees(
+          eyeDomain.lon,
+          eyeDomain.lat,
+          height,
+        ),
         orientation: {
           heading: Cesium.Math.toRadians(f.heading),
           pitch: Cesium.Math.toRadians(f.pitchDeg),
@@ -137,8 +159,15 @@ export class FlatWorldMode {
         c.mode !== this.entryFocus.mode;
       if (moved) {
         const e = this.view.chunks.exaggeration;
-        const target = Cesium.Cartesian3.fromDegrees(f.domain.lon, f.domain.lat, (f.ground || 0) / e);
-        const range = Math.max(c.mode === 'orbit' ? c.distance : f.altitude, 50);
+        const target = Cesium.Cartesian3.fromDegrees(
+          f.domain.lon,
+          f.domain.lat,
+          (f.ground || 0) / e,
+        );
+        const range = Math.max(
+          c.mode === 'orbit' ? c.distance : f.altitude,
+          50,
+        );
         camera.lookAt(
           target,
           new Cesium.HeadingPitchRange(

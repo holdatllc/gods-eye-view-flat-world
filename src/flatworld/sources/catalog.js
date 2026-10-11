@@ -16,7 +16,8 @@ export const IMAGERY_SOURCES = Object.freeze({
     // service is reachable on two hostnames, which doubles tile throughput.
     url: (z, x, y) =>
       `https://${(x + y) % 2 ? 'server' : 'services'}.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`,
-    attribution: 'Imagery: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+    attribution:
+      'Imagery: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
     format: 'rgba',
   },
   gibsBlueMarble: {
@@ -28,25 +29,38 @@ export const IMAGERY_SOURCES = Object.freeze({
       z <= LOCAL_GIBS_MAX_Z
         ? `${FLATWORLD_DATA_BASE}/gibs/BlueMarble_NextGeneration/${z}/${x}/${y}.jpeg`
         : `https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/BlueMarble_NextGeneration/default/2004-08-01/500m/${z}/${y}/${x}.jpeg`,
-    attribution: 'Polar imagery: NASA Earth Observatory Blue Marble NG via NASA GIBS (public domain)',
+    attribution:
+      'Polar imagery: NASA Earth Observatory Blue Marble NG via NASA GIBS (public domain)',
     format: 'rgba',
   },
   modisArctic: {
     id: 'modisArctic',
     label: 'NASA MODIS Terra true colour, 2026-07-20 (Arctic cap, GIBS)',
     // Only the northern cap (north of ~84°) is mirrored locally (tools/flatworld/mirror_gibs.py).
-    scheme: geographicScheme({ tileSize: 512, maxZoom: LOCAL_GIBS_MAX_Z, rootSpanDeg: 288 }),
-    url: (z, x, y) => `${FLATWORLD_DATA_BASE}/gibs/MODIS_Terra_CorrectedReflectance_TrueColor/${z}/${x}/${y}.jpg`,
-    attribution: 'Arctic cap imagery: NASA MODIS Terra corrected reflectance, 20 July 2026, via NASA GIBS (public domain)',
+    scheme: geographicScheme({
+      tileSize: 512,
+      maxZoom: LOCAL_GIBS_MAX_Z,
+      rootSpanDeg: 288,
+    }),
+    url: (z, x, y) =>
+      `${FLATWORLD_DATA_BASE}/gibs/MODIS_Terra_CorrectedReflectance_TrueColor/${z}/${x}/${y}.jpg`,
+    attribution:
+      'Arctic cap imagery: NASA MODIS Terra corrected reflectance, 20 July 2026, via NASA GIBS (public domain)',
     format: 'rgba',
   },
   gibsBlackMarble: {
     id: 'gibsBlackMarble',
     label: 'NASA Black Marble 2016 night lights (GIBS)',
     // Night lights are only needed at regional scale: served entirely from the local mirror.
-    scheme: geographicScheme({ tileSize: 512, maxZoom: LOCAL_GIBS_MAX_Z, rootSpanDeg: 288 }),
-    url: (z, x, y) => `${FLATWORLD_DATA_BASE}/gibs/VIIRS_Black_Marble/${z}/${x}/${y}.png`,
-    attribution: 'Night lights: NASA Earth Observatory Black Marble 2016 (VIIRS) via NASA GIBS (public domain)',
+    scheme: geographicScheme({
+      tileSize: 512,
+      maxZoom: LOCAL_GIBS_MAX_Z,
+      rootSpanDeg: 288,
+    }),
+    url: (z, x, y) =>
+      `${FLATWORLD_DATA_BASE}/gibs/VIIRS_Black_Marble/${z}/${x}/${y}.png`,
+    attribution:
+      'Night lights: NASA Earth Observatory Black Marble 2016 (VIIRS) via NASA GIBS (public domain)',
     format: 'rgba',
   },
 });
@@ -57,7 +71,8 @@ export const ELEVATION_SOURCES = Object.freeze({
     label: 'Mapterhorn terrain',
     scheme: webMercatorScheme({ tileSize: 512, maxZoom: 15 }),
     url: (z, x, y) => `https://tiles.mapterhorn.com/${z}/${x}/${y}.webp`,
-    attribution: 'Terrain: © Mapterhorn (Copernicus GLO-30 and national DEMs), CC BY 4.0',
+    attribution:
+      'Terrain: © Mapterhorn (Copernicus GLO-30 and national DEMs), CC BY 4.0',
     format: 'terrarium',
   },
   etopo: {
@@ -66,7 +81,8 @@ export const ELEVATION_SOURCES = Object.freeze({
     // Local pyramid built by tools/flatworld/build_etopo_tiles.py: level 0 = 2×1 tiles of 180°.
     scheme: geographicScheme({ tileSize: 256, maxZoom: 5, rootSpanDeg: 180 }),
     url: (z, x, y) => `${FLATWORLD_DATA_BASE}/etopo/${z}/${x}/${y}.png`,
-    attribution: 'Bathymetry and polar ice surface: NOAA NCEI ETOPO 2022 (public domain)',
+    attribution:
+      'Bathymetry and polar ice surface: NOAA NCEI ETOPO 2022 (public domain)',
     format: 'terrarium',
   },
 });
@@ -77,7 +93,8 @@ export const VECTOR_SOURCES = Object.freeze({
     label: 'OpenFreeMap (OpenStreetMap)',
     tileJson: 'https://tiles.openfreemap.org/planet',
     maxZoom: 14,
-    attribution: 'Buildings and roads: © OpenStreetMap contributors (ODbL) via OpenFreeMap / OpenMapTiles',
+    attribution:
+      'Buildings and roads: © OpenStreetMap contributors (ODbL) via OpenFreeMap / OpenMapTiles',
   },
 });
 

@@ -14,7 +14,12 @@ const TEX = 256;
 export const MAX_LEVEL = 19;
 
 export class ChunkManager {
-  constructor({ scene, workerCount, maxChunks = 720, onChunkReady = () => {} }) {
+  constructor({
+    scene,
+    workerCount,
+    maxChunks = 720,
+    onChunkReady = () => {},
+  }) {
     this.scene = scene;
     this.group = new THREE.Group();
     this.group.name = 'flatworld-terrain';
@@ -30,9 +35,14 @@ export class ChunkManager {
     this.pixelTolerance = 1.25;
     this.stats = { built: 0, failed: 0, evicted: 0, buildMs: 0, visible: 0 };
     this.workers = [];
-    const n = Math.max(2, Math.min(workerCount ?? (navigator.hardwareConcurrency || 8) - 2, 8));
+    const n = Math.max(
+      2,
+      Math.min(workerCount ?? (navigator.hardwareConcurrency || 8) - 2, 8),
+    );
     for (let i = 0; i < n; i += 1) {
-      const worker = new Worker(new URL('./chunkWorker.js', import.meta.url), { type: 'module' });
+      const worker = new Worker(new URL('./chunkWorker.js', import.meta.url), {
+        type: 'module',
+      });
       worker.busy = 0;
       worker.onmessage = (e) => this._onMessage(e.data);
       this.workers.push(worker);
@@ -44,7 +54,8 @@ export class ChunkManager {
   }
 
   configure({ iceParams, rotationDeg }) {
-    for (const w of this.workers) w.postMessage({ type: 'config', iceParams, rotationDeg });
+    for (const w of this.workers)
+      w.postMessage({ type: 'config', iceParams, rotationDeg });
     if (Number.isFinite(rotationDeg)) {
       this.clear();
       return;
@@ -89,13 +100,22 @@ export class ChunkManager {
       p.frame = this.frame;
       return;
     }
-    this.pending.set(key, { key, level, tx, ty, priority, frame: this.frame, sent: false });
+    this.pending.set(key, {
+      key,
+      level,
+      tx,
+      ty,
+      priority,
+      frame: this.frame,
+      sent: false,
+    });
   }
 
   _pump() {
     const queue = [...this.pending.values()].filter((p) => !p.sent);
     // Drop requests nobody asked for in the last few frames.
-    for (const p of queue) if (this.frame - p.frame > 30) this.pending.delete(p.key);
+    for (const p of queue)
+      if (this.frame - p.frame > 30) this.pending.delete(p.key);
     queue.sort((a, b) => a.priority - b.priority);
     for (const p of queue) {
       if (this.frame - p.frame > 30) continue;
@@ -104,8 +124,18 @@ export class ChunkManager {
       const id = this.nextId++;
       p.sent = true;
       worker.busy += 1;
-      this.jobs.set(id, { key: p.key, worker, level: p.level, tx: p.tx, ty: p.ty });
-      worker.postMessage({ type: 'build', id, req: { level: p.level, tx: p.tx, ty: p.ty, grid: GRID, texSize: TEX } });
+      this.jobs.set(id, {
+        key: p.key,
+        worker,
+        level: p.level,
+        tx: p.tx,
+        ty: p.ty,
+      });
+      worker.postMessage({
+        type: 'build',
+        id,
+        req: { level: p.level, tx: p.tx, ty: p.ty, grid: GRID, texSize: TEX },
+      });
     }
   }
 
@@ -162,13 +192,21 @@ export class ChunkManager {
     for (let i = 0; i < surface.length; i += 1) surface[i] = raw[i * 3 + 1];
     const position = new THREE.BufferAttribute(new Float32Array(raw), 3);
     geometry.setAttribute('position', position);
-    geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(data.normal), 3));
+    geometry.setAttribute(
+      'normal',
+      new THREE.BufferAttribute(new Float32Array(data.normal), 3),
+    );
     geometry.setAttribute('uv', new THREE.BufferAttribute(data.uv, 2));
     geometry.setAttribute('aUp', new THREE.BufferAttribute(data.up, 3));
     geometry.setAttribute('aDomain', new THREE.BufferAttribute(data.domain, 1));
     geometry.setAttribute('aWater', new THREE.BufferAttribute(data.water, 1));
     geometry.setIndex(this.index);
-    const texture = new THREE.DataTexture(data.rgba, data.texSize, data.texSize, THREE.RGBAFormat);
+    const texture = new THREE.DataTexture(
+      data.rgba,
+      data.texSize,
+      data.texSize,
+      THREE.RGBAFormat,
+    );
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.generateMipmaps = true;
     texture.minFilter = THREE.LinearMipmapLinearFilter;
@@ -189,7 +227,13 @@ export class ChunkManager {
     mesh.userData.chunkKey = this.key(data.level, data.tx, data.ty);
     const chunk = {
       mesh,
-      data: { ...data, surface, normalRaw: data.normal, position: null, rgba: null },
+      data: {
+        ...data,
+        surface,
+        normalRaw: data.normal,
+        position: null,
+        rgba: null,
+      },
       level: data.level,
       tx: data.tx,
       ty: data.ty,
@@ -300,7 +344,10 @@ export class ChunkManager {
 
     // Frustum test per tile (unloaded tiles assume the full Earth relief range).
     const frustum = new THREE.Frustum().setFromProjectionMatrix(
-      new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+      new THREE.Matrix4().multiplyMatrices(
+        camera.projectionMatrix,
+        camera.matrixWorldInverse,
+      ),
     );
     const box = new THREE.Box3();
     const inView = (level, tx, ty) => {
@@ -326,7 +373,8 @@ export class ChunkManager {
           const existing = this.chunks.get(this.key(level, tx, ty));
           if (existing) existing.lastUsed = this.frame;
           else this.request(level, tx, ty, (d / size) * (visibleTile ? 1 : 4));
-          if (visibleTile && size / d > threshold && level < MAX_LEVEL) prefetch(level + 1, tx * 2, ty * 2);
+          if (visibleTile && size / d > threshold && level < MAX_LEVEL)
+            prefetch(level + 1, tx * 2, ty * 2);
         }
       }
     };
@@ -337,12 +385,14 @@ export class ChunkManager {
       const size = ROOT_TILE_SIZE / 2 ** level;
       const d = Math.max(dist(level, tx, ty), 1);
       // Tiles outside the frustum stay at their current level (no refinement work for them).
-      const wantsRefine = level < MAX_LEVEL && size / d > threshold && inView(level, tx, ty);
+      const wantsRefine =
+        level < MAX_LEVEL && size / d > threshold && inView(level, tx, ty);
       if (!chunk) {
         this.request(level, tx, ty, d / size);
         // Request the descendants this view will need right away, so every level of the path
         // to the ideal resolution loads in parallel instead of one level per round trip.
-        if (wantsRefine && level < MAX_LEVEL) prefetch(level + 1, tx * 2, ty * 2);
+        if (wantsRefine && level < MAX_LEVEL)
+          prefetch(level + 1, tx * 2, ty * 2);
         return false;
       }
       chunk.lastUsed = this.frame;
@@ -353,7 +403,9 @@ export class ChunkManager {
           [level + 1, tx * 2, ty * 2 + 1],
           [level + 1, tx * 2 + 1, ty * 2 + 1],
         ];
-        const ready = kids.every(([l, x, y]) => this.chunks.has(this.key(l, x, y)));
+        const ready = kids.every(([l, x, y]) =>
+          this.chunks.has(this.key(l, x, y)),
+        );
         if (ready) {
           for (const [l, x, y] of kids) visit(l, x, y);
           return true;
@@ -365,12 +417,16 @@ export class ChunkManager {
     };
 
     // Roots: the level-0 tiles within the view radius of the camera's ground point.
-    const radius = Math.min(Math.max((cam.y * 400) / Math.max(e, 1), 2e6), 1.4e8);
+    const radius = Math.min(
+      Math.max((cam.y * 400) / Math.max(e, 1), 2e6),
+      1.4e8,
+    );
     const r0 = Math.floor((cx - radius + ROOT_TILE_SIZE / 2) / ROOT_TILE_SIZE);
     const r1 = Math.floor((cx + radius + ROOT_TILE_SIZE / 2) / ROOT_TILE_SIZE);
     const s0 = Math.floor((cy - radius + ROOT_TILE_SIZE / 2) / ROOT_TILE_SIZE);
     const s1 = Math.floor((cy + radius + ROOT_TILE_SIZE / 2) / ROOT_TILE_SIZE);
-    for (let ty = s0; ty <= s1; ty += 1) for (let tx = r0; tx <= r1; tx += 1) visit(0, tx, ty);
+    for (let ty = s0; ty <= s1; ty += 1)
+      for (let tx = r0; tx <= r1; tx += 1) visit(0, tx, ty);
 
     for (const c of this.chunks.values()) c.mesh.visible = false;
     for (const c of visible) c.mesh.visible = true;
@@ -455,7 +511,8 @@ export class ChunkManager {
     let bytes = 0;
     for (const c of this.chunks.values()) {
       bytes += c.data.texSize * c.data.texSize * 4 * 1.34;
-      for (const a of Object.values(c.mesh.geometry.attributes)) bytes += a.array.byteLength;
+      for (const a of Object.values(c.mesh.geometry.attributes))
+        bytes += a.array.byteLength;
     }
     return bytes;
   }

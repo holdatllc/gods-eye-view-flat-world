@@ -77,7 +77,8 @@ export const ROAD_STYLES = Object.freeze({
 export function tilePixelToLonLat(z, tx, ty, px, py, extent) {
   const n = 2 ** z;
   const lon = ((tx + px / extent) / n) * 360 - 180;
-  const lat = Math.atan(Math.sinh(Math.PI * (1 - (2 * (ty + py / extent)) / n))) / DEG;
+  const lat =
+    Math.atan(Math.sinh(Math.PI * (1 - (2 * (ty + py / extent)) / n))) / DEG;
   return [lon, lat];
 }
 
@@ -129,7 +130,7 @@ export function parseColour(value) {
 }
 
 function hash01(id, salt) {
-  let h = (Number(id) % 2147483647 | 0) ^ Math.imul(salt, 0x9e3779b1);
+  let h = ((Number(id) % 2147483647) | 0) ^ Math.imul(salt, 0x9e3779b1);
   h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
   h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
@@ -141,7 +142,10 @@ function hash01(id, salt) {
  * Returns sRGB triples for walls, wall bases (slightly darker) and roofs.
  */
 export function buildingColours(heightM, id, colour) {
-  const t = Math.min(Math.max(Math.log(Math.max(heightM, 3) / 6) / Math.log(200 / 6), 0), 1);
+  const t = Math.min(
+    Math.max(Math.log(Math.max(heightM, 3) / 6) / Math.log(200 / 6), 0),
+    1,
+  );
   const low = [0.87, 0.83, 0.77];
   const high = [0.75, 0.77, 0.8];
   let wall = low.map((c, i) => c + (high[i] - c) * t);
@@ -192,7 +196,9 @@ class Grow {
 
 /** Index buffer in the smallest type that fits. */
 function indexArray(grow, vertexCount) {
-  return vertexCount <= 65535 ? Uint16Array.from(grow.a.subarray(0, grow.n)) : grow.done();
+  return vertexCount <= 65535
+    ? Uint16Array.from(grow.a.subarray(0, grow.n))
+    : grow.done();
 }
 
 /** Convert an MVT ring (array of {x, y}, closed) into an open array of [x, y] without repeats. */
@@ -212,7 +218,8 @@ function openRing(ring) {
 
 function ringArea(r) {
   let s = 0;
-  for (let i = 0, j = r.length - 1; i < r.length; j = i++) s += r[j][0] * r[i][1] - r[i][0] * r[j][1];
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++)
+    s += r[j][0] * r[i][1] - r[i][0] * r[j][1];
   return s / 2;
 }
 
@@ -248,7 +255,9 @@ export function clipRing(ring, extent) {
       if (curIn !== prevIn) {
         const t = (value - prev[axis]) / (cur[axis] - prev[axis]);
         out.push(
-          axis === 0 ? [value, prev[1] + t * (cur[1] - prev[1])] : [prev[0] + t * (cur[0] - prev[0]), value],
+          axis === 0
+            ? [value, prev[1] + t * (cur[1] - prev[1])]
+            : [prev[0] + t * (cur[0] - prev[0]), value],
         );
       }
       if (curIn) out.push(cur);
@@ -317,7 +326,11 @@ function pointInRing(pt, ring) {
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
     const [xi, yi] = ring[i];
     const [xj, yj] = ring[j];
-    if (yi > pt[1] !== yj > pt[1] && pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi) + xi) inside = !inside;
+    if (
+      yi > pt[1] !== yj > pt[1] &&
+      pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi) + xi
+    )
+      inside = !inside;
   }
   return inside;
 }
@@ -327,7 +340,8 @@ function makeProjector({ z, x, y, frame, origin }, extent) {
   /** Tile pixel → { lx, ly } (display metres relative to the tile origin) plus lat/lon. */
   return (px, py) => {
     const lon = ((x + px / extent) / n) * 360 - 180;
-    const lat = Math.atan(Math.sinh(Math.PI * (1 - (2 * (y + py / extent)) / n))) / DEG;
+    const lat =
+      Math.atan(Math.sinh(Math.PI * (1 - (2 * (y + py / extent)) / n))) / DEG;
     const w = frame.geodeticToWorld(lat, lon, 0);
     return { lx: w.x - origin.x, ly: w.y - origin.y, lat, lon };
   };
@@ -338,14 +352,17 @@ function finiteOr(value, fallback) {
   return Number.isFinite(v) ? v : fallback;
 }
 
-const toByte = (c) => Math.round(Math.min(Math.max(srgbToLinear(c), 0), 1) * 255);
+const toByte = (c) =>
+  Math.round(Math.min(Math.max(srgbToLinear(c), 0), 1) * 255);
 
 /** Building layer → extruded geometry. */
 function buildBuildings(layer, ctx, probe) {
   const E = layer.extent;
   const project = makeProjector(ctx, E);
   const mPerPx = ctx.metresPerTile / E;
-  const probePx = probe ? lonLatToTilePixel(ctx.z, ctx.x, ctx.y, probe.lon, probe.lat, E) : null;
+  const probePx = probe
+    ? lonLatToTilePixel(ctx.z, ctx.x, ctx.y, probe.lon, probe.lat, E)
+    : null;
   const probes = [];
   const polys = [];
   let hidden = 0;
@@ -355,7 +372,10 @@ function buildBuildings(layer, ctx, probe) {
     if (f.type !== 3) continue;
     const p = f.properties;
     const hide = p.hide_3d === true || p.hide_3d === 'true' || p.hide_3d === 1;
-    let top = Math.min(finiteOr(p.render_height, DEFAULT_BUILDING_HEIGHT_M), MAX_BUILDING_HEIGHT_M);
+    let top = Math.min(
+      finiteOr(p.render_height, DEFAULT_BUILDING_HEIGHT_M),
+      MAX_BUILDING_HEIGHT_M,
+    );
     const bottom = Math.max(finiteOr(p.render_min_height, 0), 0);
     if (!(top > bottom)) top = bottom + 1;
     let emitted = false;
@@ -365,17 +385,29 @@ function buildBuildings(layer, ctx, probe) {
       const isProbe = Boolean(probePx && pointInRing(probePx, outer));
       const id = f.id ?? i;
       const probeRec = isProbe
-        ? { featureId: id, properties: { ...p }, hidden: hide, renderHeight: top, renderMinHeight: bottom }
+        ? {
+            featureId: id,
+            properties: { ...p },
+            hidden: hide,
+            renderHeight: top,
+            renderMinHeight: bottom,
+          }
         : null;
       if (probeRec) {
         // Source footprint in lat/lon (unclipped outer ring) and its lat/lon centroid.
-        const ll = outer.map(([px, py]) => tilePixelToLonLat(ctx.z, ctx.x, ctx.y, px, py, E));
+        const ll = outer.map(([px, py]) =>
+          tilePixelToLonLat(ctx.z, ctx.x, ctx.y, px, py, E),
+        );
         probeRec.outerLatLon = ll.map(([lon, lat]) => [lat, lon]);
         probeRec.centroid = {
           lat: ll.reduce((s, q) => s + q[1], 0) / ll.length,
           lon: ll.reduce((s, q) => s + q[0], 0) / ll.length,
         };
-        const w = ctx.frame.geodeticToWorld(probeRec.centroid.lat, probeRec.centroid.lon, 0);
+        const w = ctx.frame.geodeticToWorld(
+          probeRec.centroid.lat,
+          probeRec.centroid.lon,
+          0,
+        );
         probeRec.centroidDisplay = { x: w.x, y: w.y };
         probes.push(probeRec);
       }
@@ -438,7 +470,11 @@ function buildBuildings(layer, ctx, probe) {
   let maxY = -Infinity;
 
   for (const poly of polys) {
-    const { wall, base, roof } = buildingColours(poly.top, poly.id, poly.colour);
+    const { wall, base, roof } = buildingColours(
+      poly.top,
+      poly.id,
+      poly.colour,
+    );
     const cWall = wall.map(toByte);
     const cBase = base.map(toByte);
     const cRoof = roof.map(toByte);
@@ -465,7 +501,8 @@ function buildBuildings(layer, ctx, probe) {
     let area2 = 0;
     {
       const o = rings[0].pts;
-      for (let i = 0, j = o.length - 1; i < o.length; j = i++) area2 += o[j].lx * o[i].ly - o[i].lx * o[j].ly;
+      for (let i = 0, j = o.length - 1; i < o.length; j = i++)
+        area2 += o[j].lx * o[i].ly - o[i].lx * o[j].ly;
     }
     if (area2 === 0) continue;
     const sgn = area2 > 0 ? 1 : -1;
@@ -496,7 +533,9 @@ function buildBuildings(layer, ctx, probe) {
     // Roof: one vertex per ring point, earcut triangles made counter-clockwise (facing up).
     const roofStart = vertexCount;
     const contour = rings[0].pts.map((q) => new Vector2(q.lx, q.ly));
-    const holes = rings.slice(1).map((r) => r.pts.map((q) => new Vector2(q.lx, q.ly)));
+    const holes = rings
+      .slice(1)
+      .map((r) => r.pts.map((q) => new Vector2(q.lx, q.ly)));
     const flat = [];
     for (const r of rings) {
       for (const q of r.pts) {
@@ -513,7 +552,8 @@ function buildBuildings(layer, ctx, probe) {
       const A = flat[a];
       const B = flat[b];
       const C = flat[c];
-      const cross = (B.lx - A.lx) * (C.ly - A.ly) - (B.ly - A.ly) * (C.lx - A.lx);
+      const cross =
+        (B.lx - A.lx) * (C.ly - A.ly) - (B.ly - A.ly) * (C.lx - A.lx);
       if (cross === 0) continue;
       if (cross > 0) index.push3(roofStart + a, roofStart + b, roofStart + c);
       else index.push3(roofStart + a, roofStart + c, roofStart + b);
@@ -568,7 +608,12 @@ function buildBuildings(layer, ctx, probe) {
   // Landmark probes also get the exact float32 tile-local roof coordinates that are uploaded.
   for (const pr of probes) {
     if (Number.isInteger(pr.roofStart)) {
-      pr.roofLocal = Array.from(position.a.subarray(pr.roofStart * 3, (pr.roofStart + pr.roofCount) * 3));
+      pr.roofLocal = Array.from(
+        position.a.subarray(
+          pr.roofStart * 3,
+          (pr.roofStart + pr.roofCount) * 3,
+        ),
+      );
     }
   }
   return {
@@ -608,7 +653,8 @@ function buildRoads(layer, ctx) {
     const width = style.width * (p.ramp === 1 || p.ramp === true ? 0.75 : 1);
     for (const part of f.loadGeometry()) {
       const pts = part.map((q) => [q.x, q.y]);
-      for (const piece of clipLine(pts, E)) lines.push({ pts: piece, style, width });
+      for (const piece of clipLine(pts, E))
+        lines.push({ pts: piece, style, width });
     }
   }
   lines.sort((a, b) => a.style.lod - b.style.lod);
@@ -642,7 +688,8 @@ function buildRoads(layer, ctx) {
     for (const [px, py] of dense) {
       const q = project(px, py);
       const last = pts[pts.length - 1];
-      if (!last || Math.hypot(q.lx - last.lx, q.ly - last.ly) > 0.05) pts.push(q);
+      if (!last || Math.hypot(q.lx - last.lx, q.ly - last.ly) > 0.05)
+        pts.push(q);
     }
     if (pts.length < 2) continue;
     const hw = line.width / 2;
@@ -731,7 +778,14 @@ function buildRoads(layer, ctx) {
     index: indexArray(index, vertexCount),
     samples: sm,
     lod,
-    bounds: { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad, relMin: 0, relMax },
+    bounds: {
+      minX: minX - pad,
+      minY: minY - pad,
+      maxX: maxX + pad,
+      maxY: maxY + pad,
+      relMin: 0,
+      relMax,
+    },
   };
 }
 
@@ -740,8 +794,12 @@ function buildRoads(layer, ctx) {
  * @param {Uint8Array} bytes raw (already decompressed) MVT bytes
  * @param {{ z:number, x:number, y:number, frame?:object, probe?:{lat:number, lon:number} }} options
  */
-export function buildTile(bytes, { z, x, y, frame = createWorldFrame(), probe = null }) {
-  const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+export function buildTile(
+  bytes,
+  { z, x, y, frame = createWorldFrame(), probe = null },
+) {
+  const t0 =
+    typeof performance !== 'undefined' ? performance.now() : Date.now();
   const vt = new VectorTile(new PbfReader(bytes));
   const [clon, clat] = tilePixelToLonLat(z, x, y, 0.5, 0.5, 1);
   const o = frame.geodeticToWorld(clat, clon, 0);
@@ -754,9 +812,14 @@ export function buildTile(bytes, { z, x, y, frame = createWorldFrame(), probe = 
     origin,
     metresPerTile: (EARTH_CIRCUMFERENCE_M * Math.cos(clat * DEG)) / 2 ** z,
   };
-  const b = vt.layers.building ? buildBuildings(vt.layers.building, ctx, probe) : null;
-  const roads = vt.layers.transportation ? buildRoads(vt.layers.transportation, ctx) : null;
-  const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
+  const b = vt.layers.building
+    ? buildBuildings(vt.layers.building, ctx, probe)
+    : null;
+  const roads = vt.layers.transportation
+    ? buildRoads(vt.layers.transportation, ctx)
+    : null;
+  const ms =
+    (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
   return {
     z,
     x,
@@ -782,7 +845,8 @@ export function transferables(result) {
   const out = [];
   for (const part of [result.buildings, result.roads]) {
     if (!part) continue;
-    for (const v of Object.values(part)) if (ArrayBuffer.isView(v)) out.push(v.buffer);
+    for (const v of Object.values(part))
+      if (ArrayBuffer.isView(v)) out.push(v.buffer);
   }
   return out;
 }
@@ -818,19 +882,29 @@ async function loadTile(tileJson, z, x, y) {
   const key = `${z}/${x}/${y}`;
   const cached = recentTiles.get(key);
   if (cached) return cached;
-  const url = (await tileUrlTemplate(tileJson)).replace('{z}', z).replace('{x}', x).replace('{y}', y);
+  const url = (await tileUrlTemplate(tileJson))
+    .replace('{z}', z)
+    .replace('{x}', x)
+    .replace('{y}', y);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const response = await fetch(url, { mode: 'cors', signal: controller.signal }).catch((error) => {
-      throw controller.signal.aborted ? new Error(`timeout after ${FETCH_TIMEOUT_MS / 1000} s`) : error;
+    const response = await fetch(url, {
+      mode: 'cors',
+      signal: controller.signal,
+    }).catch((error) => {
+      throw controller.signal.aborted
+        ? new Error(`timeout after ${FETCH_TIMEOUT_MS / 1000} s`)
+        : error;
     });
     // 204/404: no tile there (empty sea, outside coverage) — a definitive empty result.
-    if (response.status === 204 || response.status === 404) return new Uint8Array(0);
+    if (response.status === 204 || response.status === 404)
+      return new Uint8Array(0);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const bytes = new Uint8Array(await response.arrayBuffer());
     recentTiles.set(key, bytes);
-    while (recentTiles.size > 4) recentTiles.delete(recentTiles.keys().next().value);
+    while (recentTiles.size > 4)
+      recentTiles.delete(recentTiles.keys().next().value);
     return bytes;
   } finally {
     clearTimeout(timer);
@@ -838,17 +912,40 @@ async function loadTile(tileJson, z, x, y) {
 }
 
 function frameFor(rotationDeg) {
-  if (Number.isFinite(rotationDeg) && Math.abs(workerFrame.displayRotationDeg - rotationDeg) > 1e-12) {
+  if (
+    Number.isFinite(rotationDeg) &&
+    Math.abs(workerFrame.displayRotationDeg - rotationDeg) > 1e-12
+  ) {
     workerFrame.setDisplayRotation(rotationDeg);
   }
   return workerFrame;
 }
 
 function emptyResult(z, x, y, frame) {
-  return { z, x, y, origin: { x: 0, y: 0 }, rotationDeg: frame.displayRotationDeg, buildings: null, roads: null, probes: [], stats: { ms: 0, bytes: 0, buildingFeatures: 0, hidden3d: 0, buildings: 0, roadSegments: 0 } };
+  return {
+    z,
+    x,
+    y,
+    origin: { x: 0, y: 0 },
+    rotationDeg: frame.displayRotationDeg,
+    buildings: null,
+    roads: null,
+    probes: [],
+    stats: {
+      ms: 0,
+      bytes: 0,
+      buildingFeatures: 0,
+      hidden3d: 0,
+      buildings: 0,
+      roadSegments: 0,
+    },
+  };
 }
 
-if (typeof WorkerGlobalScope !== 'undefined' && globalThis instanceof WorkerGlobalScope) {
+if (
+  typeof WorkerGlobalScope !== 'undefined' &&
+  globalThis instanceof WorkerGlobalScope
+) {
   globalThis.onmessage = async (event) => {
     const msg = event.data;
     const { id, z, x, y } = msg;
@@ -857,16 +954,37 @@ if (typeof WorkerGlobalScope !== 'undefined' && globalThis instanceof WorkerGlob
       const bytes = await loadTile(msg.tileJson, z, x, y);
       if (msg.type === 'probe') {
         const result = bytes.byteLength
-          ? buildTile(bytes, { z, x, y, frame, probe: { lat: msg.lat, lon: msg.lon } })
+          ? buildTile(bytes, {
+              z,
+              x,
+              y,
+              frame,
+              probe: { lat: msg.lat, lon: msg.lon },
+            })
           : emptyResult(z, x, y, frame);
-        globalThis.postMessage({ type: 'probe', id, probes: result.probes, origin: result.origin, stats: result.stats });
+        globalThis.postMessage({
+          type: 'probe',
+          id,
+          probes: result.probes,
+          origin: result.origin,
+          stats: result.stats,
+        });
         return;
       }
-      const result = bytes.byteLength ? buildTile(bytes, { z, x, y, frame }) : emptyResult(z, x, y, frame);
+      const result = bytes.byteLength
+        ? buildTile(bytes, { z, x, y, frame })
+        : emptyResult(z, x, y, frame);
       result.probes = [];
-      globalThis.postMessage({ type: 'tile', id, result }, transferables(result));
+      globalThis.postMessage(
+        { type: 'tile', id, result },
+        transferables(result),
+      );
     } catch (error) {
-      globalThis.postMessage({ type: 'failed', id, error: String(error?.message || error) });
+      globalThis.postMessage({
+        type: 'failed',
+        id,
+        error: String(error?.message || error),
+      });
     }
   };
 }

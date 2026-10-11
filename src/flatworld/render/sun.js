@@ -26,7 +26,11 @@ export function sunEcef(date = new Date()) {
   const s = subsolarPoint(date);
   const la = s.lat * DEG;
   const lo = s.lon * DEG;
-  return [Math.cos(la) * Math.cos(lo), Math.cos(la) * Math.sin(lo), Math.sin(la)];
+  return [
+    Math.cos(la) * Math.cos(lo),
+    Math.cos(la) * Math.sin(lo),
+    Math.sin(la),
+  ];
 }
 
 /** Sun direction in local east/north/up at (lat, lon), plus elevation/azimuth in degrees. */
@@ -35,13 +39,19 @@ export function sunLocal(lat, lon, date = new Date()) {
   const la = lat * DEG;
   const lo = lon * DEG;
   const e = -Math.sin(lo) * sx + Math.cos(lo) * sy;
-  const n = -Math.sin(la) * Math.cos(lo) * sx - Math.sin(la) * Math.sin(lo) * sy + Math.cos(la) * sz;
-  const u = Math.cos(la) * Math.cos(lo) * sx + Math.cos(la) * Math.sin(lo) * sy + Math.sin(la) * sz;
+  const n =
+    -Math.sin(la) * Math.cos(lo) * sx -
+    Math.sin(la) * Math.sin(lo) * sy +
+    Math.cos(la) * sz;
+  const u =
+    Math.cos(la) * Math.cos(lo) * sx +
+    Math.cos(la) * Math.sin(lo) * sy +
+    Math.sin(la) * sz;
   return {
     east: e,
     north: n,
     up: u,
     elevationDeg: Math.asin(Math.max(-1, Math.min(1, u))) / DEG,
-    azimuthDeg: ((Math.atan2(e, n) / DEG) + 360) % 360,
+    azimuthDeg: (Math.atan2(e, n) / DEG + 360) % 360,
   };
 }

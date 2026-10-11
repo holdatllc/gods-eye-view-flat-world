@@ -9,7 +9,9 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
  * Defaults to `../data/tiles` beside the checkout; override with GEV_FLATWORLD_DATA_DIR.
  */
 export function flatworldDataDir(env = process.env) {
-  return path.resolve(env.GEV_FLATWORLD_DATA_DIR || path.join(root, '..', 'data', 'tiles'));
+  return path.resolve(
+    env.GEV_FLATWORLD_DATA_DIR || path.join(root, '..', 'data', 'tiles'),
+  );
 }
 
 const TYPES = {

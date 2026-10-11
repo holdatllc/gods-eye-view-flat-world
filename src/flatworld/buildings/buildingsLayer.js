@@ -53,7 +53,9 @@ export function lonLatToTile(lon, lat, z = BUILDINGS_ZOOM) {
   const n = 2 ** z;
   const r = Math.min(Math.max(lat, -MERCATOR_MAX_LAT), MERCATOR_MAX_LAT) * DEG;
   const x = Math.floor(((lon + 180) / 360) * n);
-  const y = Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n);
+  const y = Math.floor(
+    ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n,
+  );
   return { x: ((x % n) + n) % n, y: Math.min(Math.max(y, 0), n - 1) };
 }
 
@@ -80,15 +82,23 @@ export function makeHeightSampler(chunks, b) {
   const list = [];
   for (const c of chunks.chunks.values()) {
     const size = c.data?.size;
-    if (!(size > 0) || !(c.data.grid > 0) || !c.mesh || !Number.isFinite(c.x0)) return fallback;
-    if (c.x0 > b.maxX || c.x0 + size <= b.minX || c.y0 > b.maxY || c.y0 + size <= b.minY) continue;
+    if (!(size > 0) || !(c.data.grid > 0) || !c.mesh || !Number.isFinite(c.x0))
+      return fallback;
+    if (
+      c.x0 > b.maxX ||
+      c.x0 + size <= b.minX ||
+      c.y0 > b.maxY ||
+      c.y0 + size <= b.minY
+    )
+      continue;
     list.push(c);
   }
   list.sort((p, q) => q.level - p.level);
   return (x, y) => {
     for (const c of list) {
       const { grid, size } = c.data;
-      if (x < c.x0 || y < c.y0 || x >= c.x0 + size || y >= c.y0 + size) continue;
+      if (x < c.x0 || y < c.y0 || x >= c.x0 + size || y >= c.y0 + size)
+        continue;
       const step = size / grid;
       const fx = Math.min(Math.max((x - c.x0) / step, 0), grid);
       const fy = Math.min(Math.max((y - c.y0) / step, 0), grid);
@@ -102,7 +112,9 @@ export function makeHeightSampler(chunks, b) {
       const h10 = pos[(j0 * row + i0 + 1) * 3 + 1];
       const h01 = pos[((j0 + 1) * row + i0) * 3 + 1];
       const h11 = pos[((j0 + 1) * row + i0 + 1) * 3 + 1];
-      return (h00 * (1 - u) + h10 * u) * (1 - v) + (h01 * (1 - u) + h11 * u) * v;
+      return (
+        (h00 * (1 - u) + h10 * u) * (1 - v) + (h01 * (1 - u) + h11 * u) * v
+      );
     }
     return chunks.heightAt(x, y);
   };
@@ -141,11 +153,19 @@ export class BuildingsLayer {
     this.group.name = 'flatworld-buildings';
     this.uniforms = { uExaggeration: { value: 1 } };
     this.buildingMaterial = grounded(
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0 }),
+      new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.82,
+        metalness: 0,
+      }),
       this.uniforms,
     );
     this.roadMaterial = grounded(
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }),
+      new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.95,
+        metalness: 0,
+      }),
       this.uniforms,
     );
     this.depthMaterial = grounded(new THREE.MeshDepthMaterial(), this.uniforms);
@@ -162,7 +182,16 @@ export class BuildingsLayer {
     this._sigCursor = 0;
     this._chunkIds = new WeakMap(); // terrain chunk → small id (signatures)
     this._nextChunkId = 1;
-    this.totals = { requested: 0, built: 0, failed: 0, evicted: 0, bytes: 0, decodeMs: 0, rebases: 0, rebaseMs: 0 };
+    this.totals = {
+      requested: 0,
+      built: 0,
+      failed: 0,
+      evicted: 0,
+      bytes: 0,
+      decodeMs: 0,
+      rebases: 0,
+      rebaseMs: 0,
+    };
   }
 
   get enabled() {
@@ -185,10 +214,14 @@ export class BuildingsLayer {
   _ensureWorkers() {
     if (this.workers.length) return;
     for (let i = 0; i < this.workerCount; i += 1) {
-      const worker = new Worker(new URL('./buildingsWorker.js', import.meta.url), { type: 'module' });
+      const worker = new Worker(
+        new URL('./buildingsWorker.js', import.meta.url),
+        { type: 'module' },
+      );
       worker.busy = 0;
       worker.onmessage = (e) => this._onMessage(worker, e.data);
-      worker.onerror = (e) => console.warn('[FlatWorld] buildings worker error', e.message);
+      worker.onerror = (e) =>
+        console.warn('[FlatWorld] buildings worker error', e.message);
       this.workers.push(worker);
     }
   }
@@ -212,7 +245,9 @@ export class BuildingsLayer {
       console.warn('[FlatWorld] buildings tile failed', job.key, msg.error);
       return;
     }
-    if (Math.abs(msg.result.rotationDeg - this.frame.displayRotationDeg) > 1e-9) {
+    if (
+      Math.abs(msg.result.rotationDeg - this.frame.displayRotationDeg) > 1e-9
+    ) {
       this.tiles.delete(job.key); // built for an old display rotation
       return;
     }
@@ -270,10 +305,16 @@ export class BuildingsLayer {
     const z = BUILDINGS_ZOOM;
     const n = 2 ** z;
     const center = lonLatToTile(lon, lat, z);
-    const tileM = (40075016.686 * Math.cos(Math.min(Math.abs(lat), MERCATOR_MAX_LAT) * DEG)) / n;
+    const tileM =
+      (40075016.686 *
+        Math.cos(Math.min(Math.abs(lat), MERCATOR_MAX_LAT) * DEG)) /
+      n;
     const span = Math.min(Math.ceil(radius / Math.max(tileM, 1)) + 1, 12);
     const frustum = new THREE.Frustum().setFromProjectionMatrix(
-      new THREE.Matrix4().multiplyMatrices(view.camera.projectionMatrix, view.camera.matrixWorldInverse),
+      new THREE.Matrix4().multiplyMatrices(
+        view.camera.projectionMatrix,
+        view.camera.matrixWorldInverse,
+      ),
     );
     const box = new THREE.Box3();
     const picked = [];
@@ -313,11 +354,21 @@ export class BuildingsLayer {
   }
 
   _dispatch() {
-    const queued = [...this.tiles.values()].filter((r) => r.state === 'queued').sort((a, b) => a.dist - b.dist);
+    const queued = [...this.tiles.values()]
+      .filter((r) => r.state === 'queued')
+      .sort((a, b) => a.dist - b.dist);
     for (const rec of queued) {
-      const worker = this.workers.reduce((best, w) => (!best || w.busy < best.busy ? w : best), null);
+      const worker = this.workers.reduce(
+        (best, w) => (!best || w.busy < best.busy ? w : best),
+        null,
+      );
       if (!worker || worker.busy >= this.maxInflightPerWorker) break;
-      const id = this._post(worker, { type: 'tile', z: rec.z, x: rec.x, y: rec.y });
+      const id = this._post(worker, {
+        type: 'tile',
+        z: rec.z,
+        x: rec.x,
+        y: rec.y,
+      });
       this.jobs.set(id, { key: rec.key });
       rec.state = 'loading';
       this.totals.requested += 1;
@@ -336,8 +387,10 @@ export class BuildingsLayer {
     };
     const index = new THREE.BufferAttribute(part.index, 1);
     // Only aGround changes after upload: free the CPU copies of everything else once on the GPU.
-    for (const attr of [...Object.values(attrs), index]) attr.onUpload(releaseArray);
-    for (const [name, attr] of Object.entries(attrs)) g.setAttribute(name, attr);
+    for (const attr of [...Object.values(attrs), index])
+      attr.onUpload(releaseArray);
+    for (const [name, attr] of Object.entries(attrs))
+      g.setAttribute(name, attr);
     g.setAttribute('aGround', groundY);
     g.setIndex(index);
     const mesh = new THREE.Mesh(g, material);
@@ -349,7 +402,11 @@ export class BuildingsLayer {
     mesh.updateMatrix();
     mesh.visible = false;
     const gpuBytes =
-      part.position.byteLength + part.normal.byteLength + part.color.byteLength + part.index.byteLength + vertexCount * 4;
+      part.position.byteLength +
+      part.normal.byteLength +
+      part.color.byteLength +
+      part.index.byteLength +
+      vertexCount * 4;
     return { mesh, ground: groundY, gpuBytes, indexCount: part.index.length };
   }
 
@@ -365,15 +422,39 @@ export class BuildingsLayer {
     const b = result.buildings;
     const r = result.roads;
     if (b) {
-      const p = this._createPart(b, this.buildingMaterial, rec.origin, { cast: true });
-      rec.b = { ...p, samples: b.samples, vstart: b.vstart, wallStart: b.wallStart, groundLevel: b.ground, lod: b.lod, count: b.count, bounds: b.bounds };
+      const p = this._createPart(b, this.buildingMaterial, rec.origin, {
+        cast: true,
+      });
+      rec.b = {
+        ...p,
+        samples: b.samples,
+        vstart: b.vstart,
+        wallStart: b.wallStart,
+        groundLevel: b.ground,
+        lod: b.lod,
+        count: b.count,
+        bounds: b.bounds,
+      };
       rec.gpuBytes += p.gpuBytes;
-      rec.cpuBytes += p.ground.array.byteLength + b.samples.byteLength + b.vstart.byteLength + b.wallStart.byteLength + b.ground.byteLength;
+      rec.cpuBytes +=
+        p.ground.array.byteLength +
+        b.samples.byteLength +
+        b.vstart.byteLength +
+        b.wallStart.byteLength +
+        b.ground.byteLength;
       this.group.add(p.mesh);
     }
     if (r) {
-      const p = this._createPart(r, this.roadMaterial, rec.origin, { cast: false });
-      rec.r = { ...p, samples: r.samples, lod: r.lod, segments: r.segments, bounds: r.bounds };
+      const p = this._createPart(r, this.roadMaterial, rec.origin, {
+        cast: false,
+      });
+      rec.r = {
+        ...p,
+        samples: r.samples,
+        lod: r.lod,
+        segments: r.segments,
+        bounds: r.bounds,
+      };
       rec.gpuBytes += p.gpuBytes;
       rec.cpuBytes += p.ground.array.byteLength + r.samples.byteLength;
       this.group.add(p.mesh);
@@ -426,7 +507,14 @@ export class BuildingsLayer {
     let h = 0;
     for (const c of chunks.chunks.values()) {
       const size = c.data?.size;
-      if (!(size > 0) || c.x0 > b.maxX || c.x0 + size <= b.minX || c.y0 > b.maxY || c.y0 + size <= b.minY) continue;
+      if (
+        !(size > 0) ||
+        c.x0 > b.maxX ||
+        c.x0 + size <= b.minX ||
+        c.y0 > b.maxY ||
+        c.y0 + size <= b.minY
+      )
+        continue;
       let id = this._chunkIds.get(c);
       if (!id) {
         id = this._nextChunkId++;
@@ -445,7 +533,10 @@ export class BuildingsLayer {
     const fallback = view.focus?.ground ?? 0;
     const ox = rec.origin.x;
     const oy = rec.origin.y;
-    const heightAt = makeHeightSampler(chunks, rec.sampleBounds ?? this._tileBounds(rec.z, rec.x, rec.y));
+    const heightAt = makeHeightSampler(
+      chunks,
+      rec.sampleBounds ?? this._tileBounds(rec.z, rec.x, rec.y),
+    );
     if (rec.b) {
       const { samples, vstart, wallStart, groundLevel } = rec.b;
       const g = rec.b.ground.array;
@@ -453,7 +544,8 @@ export class BuildingsLayer {
       let gMax = -Infinity;
       for (let s = 0, n = vstart.length - 1; s < n; s += 1) {
         const o6 = s * 6;
-        const base = heightAt(ox + samples[o6], oy + samples[o6 + 1]) ?? fallback;
+        const base =
+          heightAt(ox + samples[o6], oy + samples[o6 + 1]) ?? fallback;
         let low = base;
         const x0 = samples[o6 + 2];
         const y0 = samples[o6 + 3];
@@ -475,7 +567,8 @@ export class BuildingsLayer {
         const end = vstart[s + 1];
         g.fill(base, vstart[s], end);
         // Ground-level walls: the two bottom vertices of every quad stand on the lowest ground.
-        if (groundLevel[s] && low < base) for (let v = w0; v < end; v += 4) g[v] = g[v + 1] = low;
+        if (groundLevel[s] && low < base)
+          for (let v = w0; v < end; v += 4) g[v] = g[v + 1] = low;
         if (low < gMin) gMin = low;
         if (base > gMax) gMax = base;
       }
@@ -489,7 +582,8 @@ export class BuildingsLayer {
       let gMin = Infinity;
       let gMax = -Infinity;
       for (let s = 0, n = samples.length / 2; s < n; s += 1) {
-        const base = heightAt(ox + samples[s * 2], oy + samples[s * 2 + 1]) ?? fallback;
+        const base =
+          heightAt(ox + samples[s * 2], oy + samples[s * 2 + 1]) ?? fallback;
         g[s * 2] = base;
         g[s * 2 + 1] = base;
         if (base < gMin) gMin = base;
@@ -514,10 +608,16 @@ export class BuildingsLayer {
       if (!part || !Number.isFinite(part.gMin)) continue;
       const b = part.bounds;
       const lo = part.gMin + Math.min(b.relMin, 0) * e;
-      const hi = part.gMax + b.relMax * e + (part === rec.r ? 10 * Math.max(e, 1) : 0);
+      const hi =
+        part.gMax + b.relMax * e + (part === rec.r ? 10 * Math.max(e, 1) : 0);
       const geometry = part.mesh.geometry;
-      geometry.boundingBox = new THREE.Box3(new THREE.Vector3(b.minX, lo, -b.maxY), new THREE.Vector3(b.maxX, hi, -b.minY));
-      geometry.boundingSphere = geometry.boundingBox.getBoundingSphere(new THREE.Sphere());
+      geometry.boundingBox = new THREE.Box3(
+        new THREE.Vector3(b.minX, lo, -b.maxY),
+        new THREE.Vector3(b.maxX, hi, -b.minY),
+      );
+      geometry.boundingSphere = geometry.boundingBox.getBoundingSphere(
+        new THREE.Sphere(),
+      );
       minY = Math.min(minY, lo);
       maxY = Math.max(maxY, hi);
     }
@@ -540,9 +640,17 @@ export class BuildingsLayer {
     let bytes = 0;
     for (const rec of this.tiles.values()) bytes += rec.gpuBytes || 0;
     const settled = [...this.tiles.values()]
-      .filter((r) => (r.state === 'ready' || r.state === 'empty' || r.state === 'failed') && !wanted.has(r.key))
+      .filter(
+        (r) =>
+          (r.state === 'ready' ||
+            r.state === 'empty' ||
+            r.state === 'failed') &&
+          !wanted.has(r.key),
+      )
       .sort((a, b) => a.lastWanted - b.lastWanted);
-    let count = [...this.tiles.values()].filter((r) => r.state !== 'queued').length;
+    let count = [...this.tiles.values()].filter(
+      (r) => r.state !== 'queued',
+    ).length;
     for (const rec of settled) {
       if (count <= this.maxTiles && bytes <= this.maxCacheBytes) break;
       bytes -= rec.gpuBytes || 0;
@@ -568,7 +676,10 @@ export class BuildingsLayer {
     }
     const f = view.focus;
     this.active = Boolean(
-      this._enabled && f && f.domain?.domain === DOMAIN_GPS && f.altitude < this.maxAltitude,
+      this._enabled &&
+      f &&
+      f.domain?.domain === DOMAIN_GPS &&
+      f.altitude < this.maxAltitude,
     );
     this.group.visible = this.active;
     if (!this.active) {
@@ -587,7 +698,8 @@ export class BuildingsLayer {
       if (!rec) {
         rec = { key: k, z: t.z, x: t.x, y: t.y, state: 'queued' };
         this.tiles.set(k, rec);
-      } else if (rec.state === 'failed' && now > rec.retryAt) rec.state = 'queued';
+      } else if (rec.state === 'failed' && now > rec.retryAt)
+        rec.state = 'queued';
       rec.lastWanted = this.frameNo;
       rec.dist = t.dist;
       wanted.set(k, rec);
@@ -603,7 +715,9 @@ export class BuildingsLayer {
       this._install(a);
     }
     const chunks = view.chunks;
-    const ready = picked.map((t) => this.tiles.get(key(t.z, t.x, t.y))).filter((r) => r?.state === 'ready');
+    const ready = picked
+      .map((t) => this.tiles.get(key(t.z, t.x, t.y)))
+      .filter((r) => r?.state === 'ready');
     // Re-check terrain signatures round-robin (a few tiles per frame).
     for (let i = 0; i < Math.min(8, ready.length); i += 1) {
       const rec = ready[(this._sigCursor + i) % ready.length];
@@ -618,11 +732,16 @@ export class BuildingsLayer {
     // Terrain refines in bursts: re-base once the signature has been stable for a moment (or at
     // least every 1.5 s while it keeps changing).
     const todo = ready
-      .filter((r) => !r.based || (r.dirty && (now - r.sigAt > 300 || now - r.basedAt > 1500)))
+      .filter(
+        (r) =>
+          !r.based ||
+          (r.dirty && (now - r.sigAt > 300 || now - r.basedAt > 1500)),
+      )
       .sort((a, b) => a.based - b.based || a.dist - b.dist);
     const t1 = performance.now();
     for (const rec of todo) {
-      if (performance.now() - t1 > this.rebaseBudgetMs && rec !== todo[0]) break;
+      if (performance.now() - t1 > this.rebaseBudgetMs && rec !== todo[0])
+        break;
       if (!rec.signature) rec.signature = this._signature(rec, chunks);
       this._rebase(rec, view);
       rec.dirty = false;
@@ -685,7 +804,8 @@ export class BuildingsLayer {
       for (const part of [rec.b, rec.r]) {
         if (!part) continue;
         const g = part.mesh.geometry;
-        for (const name of ['position', 'normal', 'color']) cpu += g.attributes[name].array?.byteLength ?? 0;
+        for (const name of ['position', 'normal', 'color'])
+          cpu += g.attributes[name].array?.byteLength ?? 0;
         cpu += g.index.array?.byteLength ?? 0;
       }
       const shown = rec.b?.mesh.visible || rec.r?.mesh.visible;
@@ -740,9 +860,21 @@ export class BuildingsLayer {
    */
   verifyGround() {
     const chunks = this.view.chunks;
-    const out = { tiles: 0, staleTiles: 0, buildingSamples: 0, roadSamples: 0, maxBuildingErrM: 0, maxRoadErrM: 0 };
+    const out = {
+      tiles: 0,
+      staleTiles: 0,
+      buildingSamples: 0,
+      roadSamples: 0,
+      maxBuildingErrM: 0,
+      maxRoadErrM: 0,
+    };
     for (const rec of this.tiles.values()) {
-      if (rec.state !== 'ready' || !rec.based || !(rec.b?.mesh.visible || rec.r?.mesh.visible)) continue;
+      if (
+        rec.state !== 'ready' ||
+        !rec.based ||
+        !(rec.b?.mesh.visible || rec.r?.mesh.visible)
+      )
+        continue;
       if (rec.dirty || this._signature(rec, chunks) !== rec.signature) {
         out.staleTiles += 1; // terrain under it changed; a re-base is scheduled
         continue;
@@ -753,17 +885,26 @@ export class BuildingsLayer {
         const { samples, vstart } = rec.b;
         const g = rec.b.ground.array;
         for (let s = 0; s < vstart.length - 1; s += 1) {
-          const h = chunks.heightAt(ox + samples[s * 6], oy + samples[s * 6 + 1]);
+          const h = chunks.heightAt(
+            ox + samples[s * 6],
+            oy + samples[s * 6 + 1],
+          );
           if (h === null) continue;
           out.buildingSamples += 1;
-          out.maxBuildingErrM = Math.max(out.maxBuildingErrM, Math.abs(g[vstart[s]] - h));
+          out.maxBuildingErrM = Math.max(
+            out.maxBuildingErrM,
+            Math.abs(g[vstart[s]] - h),
+          );
         }
       }
       if (rec.r) {
         const { samples } = rec.r;
         const g = rec.r.ground.array;
         for (let s = 0; s < samples.length / 2; s += 1) {
-          const h = chunks.heightAt(ox + samples[s * 2], oy + samples[s * 2 + 1]);
+          const h = chunks.heightAt(
+            ox + samples[s * 2],
+            oy + samples[s * 2 + 1],
+          );
           if (h === null) continue;
           out.roadSamples += 1;
           out.maxRoadErrM = Math.max(out.maxRoadErrM, Math.abs(g[s * 2] - h));
@@ -787,12 +928,25 @@ export class BuildingsLayer {
     const k = key(BUILDINGS_ZOOM, t.x, t.y);
     const worker = this.workers[0];
     const msg = await new Promise((resolve, reject) => {
-      const id = this._post(worker, { type: 'probe', z: BUILDINGS_ZOOM, x: t.x, y: t.y, lat, lon });
+      const id = this._post(worker, {
+        type: 'probe',
+        z: BUILDINGS_ZOOM,
+        x: t.x,
+        y: t.y,
+        lat,
+        lon,
+      });
       this.jobs.set(id, { resolve, reject });
     });
     const rec = this.tiles.get(k);
     const e = this.view?.chunks.exaggeration ?? 1;
-    const out = { name, tile: k, reference: { lat, lon }, tileLoaded: rec?.state === 'ready', footprints: [] };
+    const out = {
+      name,
+      tile: k,
+      reference: { lat, lon },
+      tileLoaded: rec?.state === 'ready',
+      footprints: [],
+    };
     for (const p of msg.probes) {
       const w = this.frame.geodeticToWorld(p.centroid.lat, p.centroid.lon, 0);
       const back = this.frame.worldToDomain(w.x, w.y, 0);
@@ -806,7 +960,10 @@ export class BuildingsLayer {
         renderHeight: p.renderHeight,
         centroid: p.centroid,
         centroidDisplay: { x: w.x, y: w.y },
-        workerVsMainDisplayM: Math.hypot(w.x - p.centroidDisplay.x, w.y - p.centroidDisplay.y),
+        workerVsMainDisplayM: Math.hypot(
+          w.x - p.centroidDisplay.x,
+          w.y - p.centroidDisplay.y,
+        ),
         roundTrip: {
           domain: back.domain,
           lat: back.lat,
@@ -814,7 +971,10 @@ export class BuildingsLayer {
           dLatDeg: Math.abs(back.lat - p.centroid.lat),
           dLonDeg: Math.abs(back.lon - p.centroid.lon),
         },
-        centroidToReferenceM: Math.hypot((p.centroid.lat - lat) * mLat, (p.centroid.lon - lon) * mLon),
+        centroidToReferenceM: Math.hypot(
+          (p.centroid.lat - lat) * mLat,
+          (p.centroid.lon - lon) * mLon,
+        ),
       };
       if (!p.hidden && Number.isInteger(p.roofStart)) {
         // The float32 tile-local roof coordinates exactly as uploaded (the build is deterministic;
@@ -828,19 +988,33 @@ export class BuildingsLayer {
           maxLat = Math.max(maxLat, Math.abs(d.lat - p.roofLatLon[i][0]));
           maxLon = Math.max(maxLon, Math.abs(d.lon - p.roofLatLon[i][1]));
         }
-        r.vertexBuffer = { roofVertices: p.roofCount, maxVertexLatErrDeg: maxLat, maxVertexLonErrDeg: maxLon };
-        if (rec?.b && rec.origin.x === msg.origin.x && rec.origin.y === msg.origin.y) {
+        r.vertexBuffer = {
+          roofVertices: p.roofCount,
+          maxVertexLatErrDeg: maxLat,
+          maxVertexLonErrDeg: maxLon,
+        };
+        if (
+          rec?.b &&
+          rec.origin.x === msg.origin.x &&
+          rec.origin.y === msg.origin.y
+        ) {
           // Live placement: the roof's ground equals the terrain under the footprint centroid, and
           // the drawn roof is render_height (× exaggeration) above it.
           const s = rec.b.samples;
-          const terrain = this.view?.chunks.heightAt(rec.origin.x + s[p.sampleIndex * 6], rec.origin.y + s[p.sampleIndex * 6 + 1]);
+          const terrain = this.view?.chunks.heightAt(
+            rec.origin.x + s[p.sampleIndex * 6],
+            rec.origin.y + s[p.sampleIndex * 6 + 1],
+          );
           const groundY = rec.b.ground.array[p.roofStart];
           r.livePlacement = {
             groundY,
             terrainAtCentroid: terrain,
             groundErrM: terrain == null ? null : Math.abs(groundY - terrain),
             drawnRoofY: groundY + p.roofLocal[1] * e,
-            roofAboveTerrainM: terrain == null ? null : (groundY + p.roofLocal[1] * e - terrain) / e,
+            roofAboveTerrainM:
+              terrain == null
+                ? null
+                : (groundY + p.roofLocal[1] * e - terrain) / e,
             exaggeration: e,
           };
         }

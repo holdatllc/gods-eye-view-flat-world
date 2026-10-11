@@ -28,20 +28,32 @@ const browser = await puppeteer.launch({
     '--enable-unsafe-swiftshader',
     `--window-size=${spec.width || 1600},${spec.height || 1000}`,
   ],
-  defaultViewport: { width: spec.width || 1600, height: spec.height || 1000, deviceScaleFactor: 1 },
+  defaultViewport: {
+    width: spec.width || 1600,
+    height: spec.height || 1000,
+    deviceScaleFactor: 1,
+  },
 });
 const page = await browser.newPage();
 const consoleLines = [];
-page.on('console', (m) => consoleLines.push(`[${m.type()}] ${m.text()}`.slice(0, 400)));
+page.on('console', (m) =>
+  consoleLines.push(`[${m.type()}] ${m.text()}`.slice(0, 400)),
+);
 page.on('pageerror', (e) => consoleLines.push(`[pageerror] ${e.message}`));
 const results = {};
 const t0 = Date.now();
 try {
-  await page.goto(spec.url || 'http://localhost:4173/?fw=1', { waitUntil: 'domcontentloaded', timeout: 120000 });
+  await page.goto(spec.url || 'http://localhost:4173/?fw=1', {
+    waitUntil: 'domcontentloaded',
+    timeout: 120000,
+  });
   for (const step of spec.steps || []) {
     if (step.wait) await new Promise((r) => setTimeout(r, step.wait));
     if (step.waitFor) {
-      await page.waitForFunction(step.waitFor, { timeout: step.timeout || 60000, polling: 500 });
+      await page.waitForFunction(step.waitFor, {
+        timeout: step.timeout || 60000,
+        polling: 500,
+      });
     }
     if (step.eval) {
       const value = await page.evaluate(`(async () => (${step.eval}))()`);
@@ -50,7 +62,11 @@ try {
     }
     if (step.shot) {
       await page.screenshot({ path: path.resolve(outDir, step.shot) });
-      console.log('shot', step.shot, `${((Date.now() - t0) / 1000).toFixed(1)}s`);
+      console.log(
+        'shot',
+        step.shot,
+        `${((Date.now() - t0) / 1000).toFixed(1)}s`,
+      );
     }
   }
 } catch (error) {

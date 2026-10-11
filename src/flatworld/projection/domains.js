@@ -52,7 +52,15 @@ export function createWorldFrame({
     const p = projection.forward(lat, lon);
     if (!Number.isFinite(p.x)) return null;
     const d = toDisplay(p.x, p.y);
-    return { domain: DOMAIN_GPS, x: d.x, y: d.y, z: height, lat, lon: wrapLongitude(lon), height };
+    return {
+      domain: DOMAIN_GPS,
+      x: d.x,
+      y: d.y,
+      z: height,
+      lat,
+      lon: wrapLongitude(lon),
+      height,
+    };
   }
 
   /**
@@ -65,7 +73,13 @@ export function createWorldFrame({
     const g = projection.inverse(p.x, p.y);
     if (g.domain === 'invalid') return { domain: 'invalid' };
     if (g.domain === DOMAIN_ICE) {
-      return { domain: DOMAIN_ICE, iceX: x, iceY: y, z, distanceBeyondPole: g.rho - boundary };
+      return {
+        domain: DOMAIN_ICE,
+        iceX: x,
+        iceY: y,
+        z,
+        distanceBeyondPole: g.rho - boundary,
+      };
     }
     return { domain: DOMAIN_GPS, lat: g.lat, lon: g.lon, height: z, x, y };
   }
@@ -73,7 +87,9 @@ export function createWorldFrame({
   function domainAt(x, y) {
     const p = fromDisplay(x, y);
     if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return 'invalid';
-    return projection.isBeyondSouthPole(Math.hypot(p.x, p.y)) ? DOMAIN_ICE : DOMAIN_GPS;
+    return projection.isBeyondSouthPole(Math.hypot(p.x, p.y))
+      ? DOMAIN_ICE
+      : DOMAIN_GPS;
   }
 
   return {

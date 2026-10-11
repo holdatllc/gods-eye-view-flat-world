@@ -4,7 +4,10 @@ import { createPolarAeqd, polarAeqd, wrapLongitude } from './aeqd.js';
 import { createWorldFrame, DOMAIN_GPS, DOMAIN_ICE } from './domains.js';
 
 const close = (actual, expected, tol, label) =>
-  assert.ok(Math.abs(actual - expected) <= tol, `${label}: ${actual} vs ${expected} (tol ${tol})`);
+  assert.ok(
+    Math.abs(actual - expected) <= tol,
+    `${label}: ${actual} vs ${expected} (tol ${tol})`,
+  );
 
 test('North Pole maps to the origin for every longitude', () => {
   for (const lon of [-180, -90, 0, 45, 179.999]) {
@@ -66,7 +69,9 @@ test('beyond the South-Pole circle is the ice domain with no lat/lon', () => {
 test('radial scale is exact: plane distance along a meridian equals meridian arc', () => {
   const p1 = polarAeqd.forward(40, 12);
   const p2 = polarAeqd.forward(50, 12);
-  const arc = polarAeqd.meridianArc((50 * Math.PI) / 180) - polarAeqd.meridianArc((40 * Math.PI) / 180);
+  const arc =
+    polarAeqd.meridianArc((50 * Math.PI) / 180) -
+    polarAeqd.meridianArc((40 * Math.PI) / 180);
   close(Math.hypot(p1.x - p2.x, p1.y - p2.y), arc, 1e-6, 'arc');
 });
 
@@ -79,7 +84,12 @@ test('invalid input never produces a position', () => {
 test('spherical ellipsoid reduces to rho = R(π/2 − φ)', () => {
   const R = 6371000;
   const sphere = createPolarAeqd({ ellipsoid: { a: R, f: 0 } });
-  close(sphere.forward(30, 0).rho, R * (Math.PI / 2 - Math.PI / 6), 1e-6, 'rho');
+  close(
+    sphere.forward(30, 0).rho,
+    R * (Math.PI / 2 - Math.PI / 6),
+    1e-6,
+    'rho',
+  );
 });
 
 test('world frame keeps GPS and ice domains separate and rotation is rigid', () => {
@@ -93,8 +103,16 @@ test('world frame keeps GPS and ice domains separate and rotation is rigid', () 
   const ice = frame.worldToDomain(frame.boundaryRadius * 1.5, 0);
   assert.equal(ice.domain, DOMAIN_ICE);
   assert.equal(ice.lat, undefined);
-  const base = createWorldFrame({ displayRotationDeg: 0 }).geodeticToWorld(51.4779, -0.0015);
-  close(Math.hypot(w.x, w.y), Math.hypot(base.x, base.y), 1e-6, 'rho preserved');
+  const base = createWorldFrame({ displayRotationDeg: 0 }).geodeticToWorld(
+    51.4779,
+    -0.0015,
+  );
+  close(
+    Math.hypot(w.x, w.y),
+    Math.hypot(base.x, base.y),
+    1e-6,
+    'rho preserved',
+  );
 });
 
 test('audit D1: the real South Pole is GPS at every longitude and rotation', () => {
@@ -125,7 +143,8 @@ test('audit D5/D6: one domain decision; NaN input is invalid', () => {
     [-18797546.77837836, -6841747.504556272],
   ]) {
     const d = frame.worldToDomain(x, y);
-    if (d.domain === DOMAIN_GPS) assert.ok(Number.isFinite(d.lat) && Number.isFinite(d.lon));
+    if (d.domain === DOMAIN_GPS)
+      assert.ok(Number.isFinite(d.lat) && Number.isFinite(d.lon));
     assert.equal(frame.domainAt(x, y), d.domain);
   }
   assert.equal(frame.worldToDomain(NaN, 0).domain, 'invalid');

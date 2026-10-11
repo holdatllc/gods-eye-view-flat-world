@@ -41,7 +41,11 @@ export function tileBounds(level, tx, ty, rootSize = ROOT_TILE_SIZE) {
   return { size, x0, y0, x1: x0 + size, y1: y0 + size };
 }
 
-export function createChunkBuilder({ store, frameOptions = {}, iceParams = {} }) {
+export function createChunkBuilder({
+  store,
+  frameOptions = {},
+  iceParams = {},
+}) {
   const projection = createPolarAeqd();
   polarScale = (lat) => projection.scaleFactors(lat).k;
   const frame = createWorldFrame({ projection, ...frameOptions });
@@ -162,13 +166,23 @@ export function createChunkBuilder({ store, frameOptions = {}, iceParams = {} })
       const lon = vLon[k];
       const res = vRes[k];
       const etopo = ELEVATION_SOURCES.etopo;
-      let hEtopo = sampler.sampleHeight(etopo, lat, lon, etopo.scheme.zoomFor(res));
+      let hEtopo = sampler.sampleHeight(
+        etopo,
+        lat,
+        lon,
+        etopo.scheme.zoomFor(res),
+      );
       if (!Number.isFinite(hEtopo)) hEtopo = 0;
       let h = hEtopo;
       let w = hEtopo < 0 ? 1 : 0;
       if (res < FINE_TERRAIN_BELOW_M && Math.abs(lat) < 85) {
         const mt = ELEVATION_SOURCES.mapterhorn;
-        const hm = sampler.sampleHeight(mt, lat, lon, mt.scheme.zoomFor(res, lat));
+        const hm = sampler.sampleHeight(
+          mt,
+          lat,
+          lon,
+          mt.scheme.zoomFor(res, lat),
+        );
         if (Number.isFinite(hm)) {
           // Mapterhorn is land-only (oceans read 0); ETOPO supplies bathymetry there.
           if (Math.abs(hm) < 0.5 && hEtopo < -2) {
@@ -291,7 +305,8 @@ export function createChunkBuilder({ store, frameOptions = {}, iceParams = {} })
             continue;
           }
           const lerp = (key) =>
-            (s00[key] * (1 - u) + s10[key] * u) * (1 - v) + (s01[key] * (1 - u) + s11[key] * u) * v;
+            (s00[key] * (1 - u) + s10[key] * u) * (1 - v) +
+            (s01[key] * (1 - u) + s11[key] * u) * v;
           const zone = lerp('crevasseZone');
           const tr = lerp('transition');
           scratch.rock = lerp('rock');
@@ -301,7 +316,13 @@ export function createChunkBuilder({ store, frameOptions = {}, iceParams = {} })
           const gi = Math.min(G, Math.round(((i + 0.5) / T) * G));
           const gj = Math.min(G, Math.round(((j + 0.5) / T) * G));
           const ny = normal[(gj * (G + 1) + gi) * 3 + 1];
-          const col = iceColor(scratch, x, y, Math.sqrt(Math.max(0, 1 - ny * ny)), ice.params.seed);
+          const col = iceColor(
+            scratch,
+            x,
+            y,
+            Math.sqrt(Math.max(0, 1 - ny * ny)),
+            ice.params.seed,
+          );
           rgba[o] = col[0];
           rgba[o + 1] = col[1];
           rgba[o + 2] = col[2];
@@ -313,11 +334,24 @@ export function createChunkBuilder({ store, frameOptions = {}, iceParams = {} })
         const lon = tLon[k];
         const absLat = Math.abs(lat);
         let got = null;
-        if (tZoomEsri[k] >= 0) got = sampler.sampleColor(esri, lat, lon, tZoomEsri[k], c);
+        if (tZoomEsri[k] >= 0)
+          got = sampler.sampleColor(esri, lat, lon, tZoomEsri[k], c);
         if (tZoomGibs[k] >= 0) {
-          const g = sampler.sampleColor(lat > 0 ? arctic : gibs, lat, lon, tZoomGibs[k], c2);
+          const g = sampler.sampleColor(
+            lat > 0 ? arctic : gibs,
+            lat,
+            lon,
+            tZoomGibs[k],
+            c2,
+          );
           if (g) {
-            const lin = Math.min(1, Math.max(0, (absLat - ESRI_FULL_LAT) / (ESRI_MAX_LAT - ESRI_FULL_LAT)));
+            const lin = Math.min(
+              1,
+              Math.max(
+                0,
+                (absLat - ESRI_FULL_LAT) / (ESRI_MAX_LAT - ESRI_FULL_LAT),
+              ),
+            );
             // Soft, wide blend so the polar cap reads as a natural ice edge, not a seam.
             const t = got ? lin * lin * (3 - 2 * lin) : 1;
             c[0] = (got ? c[0] : 0) * (1 - t) + g[0] * t;
@@ -337,7 +371,10 @@ export function createChunkBuilder({ store, frameOptions = {}, iceParams = {} })
         // Alpha channel = night-light intensity from Black Marble (dark base removed).
         const nl = sampler.sampleColor(lights, lat, lon, tZoomLights[k], c2);
         const lum = nl ? Math.max(nl[0], nl[1], nl[2]) : 0;
-        rgba[o + 3] = Math.max(0, Math.min(255, Math.round(((lum - 70) / 185) * 255)));
+        rgba[o + 3] = Math.max(
+          0,
+          Math.min(255, Math.round(((lum - 70) / 185) * 255)),
+        );
       }
     }
 

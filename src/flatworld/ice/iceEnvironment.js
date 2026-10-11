@@ -14,7 +14,10 @@ const CAVE_CELL = 1500;
 const CAVE_RADIUS_CELLS = 4;
 
 function hashUnit(ix, iy, seed) {
-  let h = Math.imul(ix | 0, 0x27d4eb2d) ^ Math.imul(iy | 0, 0x165667b1) ^ Math.imul(seed | 0, 0x9e3779b9);
+  let h =
+    Math.imul(ix | 0, 0x27d4eb2d) ^
+    Math.imul(iy | 0, 0x165667b1) ^
+    Math.imul(seed | 0, 0x9e3779b9);
   h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
   h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
@@ -23,11 +26,36 @@ function hashUnit(ix, iy, seed) {
 function caveGeometry() {
   // An arched mouth (half torus) with a tapering tunnel running into the cliff along −Z.
   const group = new THREE.Group();
-  const iceMat = new THREE.MeshStandardMaterial({ color: 0x9fd2ee, roughness: 0.25, metalness: 0.0, emissive: 0x0b3550, emissiveIntensity: 0.6, side: THREE.DoubleSide });
-  const darkMat = new THREE.MeshStandardMaterial({ color: 0x0a1c2b, roughness: 0.9, side: THREE.BackSide, emissive: 0x06243a, emissiveIntensity: 0.8 });
-  const arch = new THREE.Mesh(new THREE.TorusGeometry(1, 0.22, 12, 32, Math.PI), iceMat);
+  const iceMat = new THREE.MeshStandardMaterial({
+    color: 0x9fd2ee,
+    roughness: 0.25,
+    metalness: 0.0,
+    emissive: 0x0b3550,
+    emissiveIntensity: 0.6,
+    side: THREE.DoubleSide,
+  });
+  const darkMat = new THREE.MeshStandardMaterial({
+    color: 0x0a1c2b,
+    roughness: 0.9,
+    side: THREE.BackSide,
+    emissive: 0x06243a,
+    emissiveIntensity: 0.8,
+  });
+  const arch = new THREE.Mesh(
+    new THREE.TorusGeometry(1, 0.22, 12, 32, Math.PI),
+    iceMat,
+  );
   group.add(arch);
-  const tunnelGeo = new THREE.CylinderGeometry(0.92, 0.55, 6, 24, 6, true, 0, Math.PI);
+  const tunnelGeo = new THREE.CylinderGeometry(
+    0.92,
+    0.55,
+    6,
+    24,
+    6,
+    true,
+    0,
+    Math.PI,
+  );
   tunnelGeo.rotateX(Math.PI / 2);
   tunnelGeo.rotateZ(Math.PI / 2);
   tunnelGeo.rotateZ(-Math.PI / 2);
@@ -59,7 +87,13 @@ export class IceEnvironment {
     this.field = createIceField(iceParams, frame);
     this.group = new THREE.Group();
     this.group.name = 'flatworld-ice-environment';
-    this.weather = { enabled: true, intensity: 0.6, windSpeed: 14, windDirDeg: 210, whiteout: 0.2 };
+    this.weather = {
+      enabled: true,
+      intensity: 0.6,
+      windSpeed: 14,
+      windDirDeg: 210,
+      whiteout: 0.2,
+    };
     this.cavesEnabled = true;
     this.caves = new Map();
     this.caveTemplate = caveGeometry();
@@ -72,7 +106,15 @@ export class IceEnvironment {
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     this.snow = new THREE.Points(
       g,
-      new THREE.PointsMaterial({ color: 0xffffff, size: 0.09, sizeAttenuation: true, transparent: true, opacity: 0.85, depthWrite: false, fog: false }),
+      new THREE.PointsMaterial({
+        color: 0xffffff,
+        size: 0.09,
+        sizeAttenuation: true,
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: false,
+        fog: false,
+      }),
     );
     this.snow.frustumCulled = false;
     this.group.add(this.snow);
@@ -98,19 +140,33 @@ export class IceEnvironment {
   /** Extra fog density contributed by the weather at this focus (whiteout). */
   fogDensity(focus) {
     if (!this.weather.enabled || !this.inIce(focus)) return 0;
-    const t = Math.min(1, Math.max(0, (focus.distanceBeyond ?? focus.domain.distanceBeyondPole ?? 0) / 150000));
+    const t = Math.min(
+      1,
+      Math.max(
+        0,
+        (focus.distanceBeyond ?? focus.domain.distanceBeyondPole ?? 0) / 150000,
+      ),
+    );
     const lowness = Math.max(0, 1 - focus.altitude / 4000);
-    return t * lowness * (this.weather.whiteout * 2.5e-4 + this.weather.intensity * 3e-5);
+    return (
+      t *
+      lowness *
+      (this.weather.whiteout * 2.5e-4 + this.weather.intensity * 3e-5)
+    );
   }
 
   update(dt, view) {
     this.time += dt;
     const focus = view.focus;
     const cam = view.camera.position;
-    const inIce = this.inIce(focus) || view.frame.domainAt(cam.x, -cam.z) === DOMAIN_ICE;
+    const inIce =
+      this.inIce(focus) || view.frame.domainAt(cam.x, -cam.z) === DOMAIN_ICE;
     const low = focus && focus.altitude < 3000;
     this._updateSnow(dt, view, inIce && low && this.weather.enabled);
-    this._updateCaves(view, inIce && focus && focus.altitude < 12000 && this.cavesEnabled);
+    this._updateCaves(
+      view,
+      inIce && focus && focus.altitude < 12000 && this.cavesEnabled,
+    );
   }
 
   _updateSnow(dt, view, active) {
@@ -119,13 +175,19 @@ export class IceEnvironment {
     const cam = view.camera.position;
     const box = 60;
     const pos = this.snow.geometry.attributes.position.array;
-    const n = Math.floor((pos.length / 3) * Math.min(1, this.weather.intensity));
+    const n = Math.floor(
+      (pos.length / 3) * Math.min(1, this.weather.intensity),
+    );
     const wa = (this.weather.windDirDeg * Math.PI) / 180;
     const wx = Math.sin(wa) * this.weather.windSpeed;
     const wz = -Math.cos(wa) * this.weather.windSpeed;
     const t = this.time;
     // Particles live in a camera-centred box; positions are a pure function of time + seed.
-    this.snow.position.set(Math.round(cam.x), Math.round(cam.y), Math.round(cam.z));
+    this.snow.position.set(
+      Math.round(cam.x),
+      Math.round(cam.y),
+      Math.round(cam.z),
+    );
     const ox = cam.x - this.snow.position.x;
     const oy = cam.y - this.snow.position.y;
     const oz = cam.z - this.snow.position.z;
@@ -136,7 +198,9 @@ export class IceEnvironment {
       const sz = this.seeds[i * 3 + 2] * 2 * box;
       const flutter = Math.sin(t * 1.7 + i) * 0.6;
       pos[i * 3] = mod(sx + wx * t + flutter - (cam.x % (2 * box))) + ox;
-      pos[i * 3 + 1] = mod(sy - (1.2 + this.seeds[i * 3] * 0.8) * t - (cam.y % (2 * box))) + oy;
+      pos[i * 3 + 1] =
+        mod(sy - (1.2 + this.seeds[i * 3] * 0.8) * t - (cam.y % (2 * box))) +
+        oy;
       pos[i * 3 + 2] = mod(sz + wz * t + flutter - (cam.z % (2 * box))) + oz;
     }
     this.snow.geometry.setDrawRange(0, n);
@@ -166,8 +230,12 @@ export class IceEnvironment {
         const h0 = this.field.sample(x, y);
         if (h0.transition < 0.5) continue;
         const d = 25;
-        const hx = this.field.sample(x + d, y).height - this.field.sample(x - d, y).height;
-        const hy = this.field.sample(x, y + d).height - this.field.sample(x, y - d).height;
+        const hx =
+          this.field.sample(x + d, y).height -
+          this.field.sample(x - d, y).height;
+        const hy =
+          this.field.sample(x, y + d).height -
+          this.field.sample(x, y - d).height;
         const slope = Math.hypot(hx, hy) / (2 * d);
         if (slope < 0.55) continue;
         wanted.add(key);
@@ -215,13 +283,21 @@ export class IceEnvironment {
         if (c.transition < 0.9) continue;
         let lo = c.height;
         let hi = c.height;
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1]]) {
+        for (const [dx, dy] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+          [1, 1],
+          [-1, -1],
+        ]) {
           const h = this.field.sample(px + dx * 4000, py + dy * 4000).height;
           lo = Math.min(lo, h);
           hi = Math.max(hi, h);
         }
         const score = hi - lo + 0.3 * (c.height - this.field.params.rimHeightM);
-        if (!best || score > best.score) best = { x: px, y: py, score, peak: hi, low: lo };
+        if (!best || score > best.score)
+          best = { x: px, y: py, score, peak: hi, low: lo };
       }
     }
     if (!best) return null;
@@ -238,7 +314,11 @@ export class IceEnvironment {
   }
 
   stats() {
-    return { caves: this.caves.size, snowVisible: this.snow.visible, weather: { ...this.weather } };
+    return {
+      caves: this.caves.size,
+      snowVisible: this.snow.visible,
+      weather: { ...this.weather },
+    };
   }
 
   destroy() {

@@ -60,7 +60,10 @@ export function compareRoutes(frame, p1, p2, { samples = 256 } = {}) {
   g.plane = g.points.map((p) => frame.geodeticToWorld(p.lat, p.lon));
   let geodesicDrawnLengthM = 0;
   for (let i = 1; i < g.plane.length; i += 1) {
-    geodesicDrawnLengthM += Math.hypot(g.plane[i].x - g.plane[i - 1].x, g.plane[i].y - g.plane[i - 1].y);
+    geodesicDrawnLengthM += Math.hypot(
+      g.plane[i].x - g.plane[i - 1].x,
+      g.plane[i].y - g.plane[i - 1].y,
+    );
   }
   g.lengthOnMapM = geodesicDrawnLengthM;
   result.geodesic = g;
@@ -72,7 +75,10 @@ export function compareRoutes(frame, p1, p2, { samples = 256 } = {}) {
   const pts = [];
   for (let i = 1; i <= samples; i += 1) {
     const t = i / samples;
-    const q = frame.worldToDomain(p1.x + (p2.x - p1.x) * t, p1.y + (p2.y - p1.y) * t);
+    const q = frame.worldToDomain(
+      p1.x + (p2.x - p1.x) * t,
+      p1.y + (p2.y - p1.y) * t,
+    );
     pts.push(q);
     ground += WGS84.Inverse(prev.lat, prev.lon, q.lat, q.lon).s12;
     prev = q;

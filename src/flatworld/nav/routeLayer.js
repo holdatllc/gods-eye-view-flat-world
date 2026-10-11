@@ -17,13 +17,34 @@ const { Geodesic } = geographiclib;
 
 export const ROUTE_PRESETS = [
   { name: 'London → New York', a: [51.5074, -0.1278], b: [40.7128, -74.006] },
-  { name: 'Sydney → Santiago', a: [-33.8688, 151.2093], b: [-33.4489, -70.6693] },
-  { name: 'Johannesburg → Perth', a: [-26.2041, 28.0473], b: [-31.9523, 115.8613] },
-  { name: 'Tokyo → Los Angeles', a: [35.6762, 139.6503], b: [34.0522, -118.2437] },
+  {
+    name: 'Sydney → Santiago',
+    a: [-33.8688, 151.2093],
+    b: [-33.4489, -70.6693],
+  },
+  {
+    name: 'Johannesburg → Perth',
+    a: [-26.2041, 28.0473],
+    b: [-31.9523, 115.8613],
+  },
+  {
+    name: 'Tokyo → Los Angeles',
+    a: [35.6762, 139.6503],
+    b: [34.0522, -118.2437],
+  },
 ];
 
 function makeLine(color, width, dashed = false) {
-  const material = new LineMaterial({ color, linewidth: width, transparent: true, opacity: 0.95, depthTest: false, dashed, dashSize: 3, gapSize: 2 });
+  const material = new LineMaterial({
+    color,
+    linewidth: width,
+    transparent: true,
+    opacity: 0.95,
+    depthTest: false,
+    dashed,
+    dashSize: 3,
+    gapSize: 2,
+  });
   const line = new Line2(new LineGeometry(), material);
   line.renderOrder = 20;
   line.frustumCulled = false;
@@ -73,7 +94,11 @@ export class RouteLayer {
   _marker(p) {
     const m = new THREE.Mesh(
       new THREE.SphereGeometry(1, 16, 12),
-      new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, fog: false }),
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        depthTest: false,
+        fog: false,
+      }),
     );
     m.position.set(p.x, 0, -p.y);
     m.renderOrder = 21;
@@ -85,7 +110,8 @@ export class RouteLayer {
     this.points = [];
     this.result = null;
     this.markers.clear();
-    for (const l of [this.geodesicLine, this.flatLine, this.groundLine]) l.visible = false;
+    for (const l of [this.geodesicLine, this.flatLine, this.groundLine])
+      l.visible = false;
     this.onResult(null);
   }
 
@@ -142,10 +168,19 @@ export class RouteLayer {
       }
     }
     const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(segments), 3));
+    geom.setAttribute(
+      'position',
+      new THREE.BufferAttribute(new Float32Array(segments), 3),
+    );
     const lines = new THREE.LineSegments(
       geom,
-      new THREE.LineBasicMaterial({ color: 0xff7ad9, transparent: true, opacity: 0.85, depthTest: false, fog: false }),
+      new THREE.LineBasicMaterial({
+        color: 0xff7ad9,
+        transparent: true,
+        opacity: 0.85,
+        depthTest: false,
+        fog: false,
+      }),
     );
     lines.renderOrder = 19;
     lines.frustumCulled = false;
@@ -155,7 +190,8 @@ export class RouteLayer {
   update(dt, view) {
     const res = new THREE.Vector2();
     view.renderer.getSize(res);
-    for (const l of [this.geodesicLine, this.flatLine, this.groundLine]) l.material.resolution.copy(res);
+    for (const l of [this.geodesicLine, this.flatLine, this.groundLine])
+      l.material.resolution.copy(res);
     // Keep markers a constant screen size.
     for (const m of this.markers.children) {
       const d = m.position.distanceTo(view.camera.position);

@@ -14,9 +14,24 @@ import { northAt } from '../render/controls.js';
 
 const KINDS = {
   flights: { color: 0x39e1ff, layer: 'flights', size: 1, label: 'Aircraft' },
-  military: { color: 0xffb020, layer: 'military', size: 1, label: 'Military aircraft' },
-  vessels: { color: 0x5dff8f, layer: 'ais-live-vessels', size: 1.4, label: 'Ship' },
-  satellites: { color: 0xff5ad7, layer: 'satellites', size: 0.9, label: 'Satellite' },
+  military: {
+    color: 0xffb020,
+    layer: 'military',
+    size: 1,
+    label: 'Military aircraft',
+  },
+  vessels: {
+    color: 0x5dff8f,
+    layer: 'ais-live-vessels',
+    size: 1.4,
+    label: 'Ship',
+  },
+  satellites: {
+    color: 0xff5ad7,
+    layer: 'satellites',
+    size: 0.9,
+    label: 'Satellite',
+  },
 };
 const MAX_PER_KIND = 20000;
 
@@ -40,7 +55,10 @@ function aircraftGeometry() {
   shape.lineTo(-0.15, -0.5);
   shape.lineTo(-0.1, -0.08);
   shape.lineTo(0.6, 0);
-  const g = new THREE.ExtrudeGeometry(shape, { depth: 0.06, bevelEnabled: false });
+  const g = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.06,
+    bevelEnabled: false,
+  });
   g.rotateX(-Math.PI / 2); // lie flat: shape Y → world −Z
   g.translate(0, 0.03, 0);
   return g;
@@ -54,7 +72,10 @@ function shipGeometry() {
   shape.lineTo(-0.5, -0.18);
   shape.lineTo(0.3, -0.18);
   shape.lineTo(0.6, 0);
-  const g = new THREE.ExtrudeGeometry(shape, { depth: 0.12, bevelEnabled: false });
+  const g = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.12,
+    bevelEnabled: false,
+  });
   g.rotateX(-Math.PI / 2);
   return g;
 }
@@ -67,7 +88,12 @@ export class LiveOverlay {
     this.group.name = 'flatworld-live';
     this.meshes = {};
     this.records = {};
-    this.enabled = { flights: true, military: true, vessels: true, satellites: true };
+    this.enabled = {
+      flights: true,
+      military: true,
+      vessels: true,
+      satellites: true,
+    };
     this.tracked = null;
     this.lastPoll = 0;
     this.labels = null;
@@ -80,7 +106,10 @@ export class LiveOverlay {
       satellites: new THREE.OctahedronGeometry(0.35),
     };
     for (const [kind, spec] of Object.entries(KINDS)) {
-      const mat = new THREE.MeshBasicMaterial({ color: spec.color, fog: false });
+      const mat = new THREE.MeshBasicMaterial({
+        color: spec.color,
+        fog: false,
+      });
       const mesh = new THREE.InstancedMesh(geos[kind], mat, MAX_PER_KIND);
       mesh.count = 0;
       mesh.frustumCulled = false;
@@ -91,26 +120,53 @@ export class LiveOverlay {
     }
     // Ground "stalks" from aircraft/satellites down to their nadir make altitude readable.
     this.stalkGeometry = new THREE.BufferGeometry();
-    this.stalkGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6 * 4096), 3));
+    this.stalkGeometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(new Float32Array(6 * 4096), 3),
+    );
     this.stalks = new THREE.LineSegments(
       this.stalkGeometry,
-      new THREE.LineBasicMaterial({ color: 0x9fe8ff, transparent: true, opacity: 0.35, fog: false }),
+      new THREE.LineBasicMaterial({
+        color: 0x9fe8ff,
+        transparent: true,
+        opacity: 0.35,
+        fog: false,
+      }),
     );
     this.stalks.frustumCulled = false;
     this.group.add(this.stalks);
     this.trackMarker = new THREE.Mesh(
       new THREE.RingGeometry(1.1, 1.35, 48),
-      new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, fog: false, depthTest: false }),
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        side: THREE.DoubleSide,
+        fog: false,
+        depthTest: false,
+      }),
     );
     this.trackMarker.rotateX(-Math.PI / 2);
     // Ground track (sub-satellite points) and orbit path for a tracked satellite.
     this.groundTrack = new THREE.Line(
       new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({ color: 0xff5ad7, transparent: true, opacity: 0.9, depthTest: false, fog: false }),
+      new THREE.LineBasicMaterial({
+        color: 0xff5ad7,
+        transparent: true,
+        opacity: 0.9,
+        depthTest: false,
+        fog: false,
+      }),
     );
     this.orbitPath = new THREE.Line(
       new THREE.BufferGeometry(),
-      new THREE.LineDashedMaterial({ color: 0xffb3ec, dashSize: 60000, gapSize: 40000, transparent: true, opacity: 0.7, depthTest: false, fog: false }),
+      new THREE.LineDashedMaterial({
+        color: 0xffb3ec,
+        dashSize: 60000,
+        gapSize: 40000,
+        transparent: true,
+        opacity: 0.7,
+        depthTest: false,
+        fog: false,
+      }),
     );
     for (const l of [this.groundTrack, this.orbitPath]) {
       l.frustumCulled = false;
@@ -143,10 +199,16 @@ export class LiveOverlay {
     }
     this.groundTrack.geometry.dispose();
     this.groundTrack.geometry = new THREE.BufferGeometry();
-    this.groundTrack.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ground), 3));
+    this.groundTrack.geometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(new Float32Array(ground), 3),
+    );
     this.orbitPath.geometry.dispose();
     this.orbitPath.geometry = new THREE.BufferGeometry();
-    this.orbitPath.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(orbit), 3));
+    this.orbitPath.geometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(new Float32Array(orbit), 3),
+    );
     this.orbitPath.computeLineDistances();
     this.groundTrack.visible = this.orbitPath.visible = true;
     this.trackBuiltAt = now;
@@ -195,7 +257,8 @@ export class LiveOverlay {
     } catch {
       shown = [];
     }
-    if (!rows.length) rows = shown.map((p) => ({ ...p, lat: p.latitude, lon: p.longitude }));
+    if (!rows.length)
+      rows = shown.map((p) => ({ ...p, lat: p.latitude, lon: p.longitude }));
     // Some feeds omit altitude in their records (e.g. military contacts without a barometric
     // value); the layer's own rendered altitude for the same contact is used then.
     const shownAlt = new Map(shown.map((p) => [String(p.id), p.altitudeM]));
@@ -211,8 +274,12 @@ export class LiveOverlay {
         lon,
         altitudeM: Number.isFinite(a.altitudeM)
           ? a.altitudeM
-          : Number.isFinite(shownAlt.get(String(a.icao24 ?? a.id))) ? shownAlt.get(String(a.icao24 ?? a.id)) : 0,
-        heading: [a.heading, a.courseDeg, a.cog, a.trueTrack].find(Number.isFinite) ?? null,
+          : Number.isFinite(shownAlt.get(String(a.icao24 ?? a.id)))
+            ? shownAlt.get(String(a.icao24 ?? a.id))
+            : 0,
+        heading:
+          [a.heading, a.courseDeg, a.cog, a.trueTrack].find(Number.isFinite) ??
+          null,
         speedMps: a.speedMps ?? null,
         source: mod.source ?? null,
       });
@@ -242,11 +309,26 @@ export class LiveOverlay {
           r = { kind, id: row.id, fixes: [] };
         }
         const last = r.fixes[r.fixes.length - 1];
-        if (!last || last.lat !== row.lat || last.lon !== row.lon || last.altitudeM !== row.altitudeM) {
-          r.fixes.push({ lat: row.lat, lon: row.lon, altitudeM: row.altitudeM, t: now });
+        if (
+          !last ||
+          last.lat !== row.lat ||
+          last.lon !== row.lon ||
+          last.altitudeM !== row.altitudeM
+        ) {
+          r.fixes.push({
+            lat: row.lat,
+            lon: row.lon,
+            altitudeM: row.altitudeM,
+            t: now,
+          });
           if (r.fixes.length > 2) r.fixes.shift();
         }
-        Object.assign(r, { label: row.label, heading: row.heading, speedMps: row.speedMps, source: row.source });
+        Object.assign(r, {
+          label: row.label,
+          heading: row.heading,
+          speedMps: row.speedMps,
+          source: row.source,
+        });
         byId.set(row.id, r);
         next.push(r);
       }
@@ -291,7 +373,11 @@ export class LiveOverlay {
     const p = new THREE.Vector3();
     const stalkPos = this.stalkGeometry.attributes.position.array;
     // Floating origin: instance matrices are float32 on the GPU, so keep them camera-relative.
-    const origin = new THREE.Vector3(Math.round(cam.x / 1000) * 1000, 0, Math.round(cam.z / 1000) * 1000);
+    const origin = new THREE.Vector3(
+      Math.round(cam.x / 1000) * 1000,
+      0,
+      Math.round(cam.z / 1000) * 1000,
+    );
     this.group.position.copy(origin);
     this.group.updateMatrixWorld();
     let stalkCount = 0;
@@ -326,7 +412,10 @@ export class LiveOverlay {
         }
         q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
         const dist = p.distanceTo(cam);
-        const size = Math.max(dist * 0.0065 * KINDS[kind].size * this.drawScale, 30);
+        const size = Math.max(
+          dist * 0.0065 * KINDS[kind].size * this.drawScale,
+          30,
+        );
         s.setScalar(size);
         m.compose(p.clone().sub(origin), q, s);
         mesh.setMatrixAt(i, m);
@@ -360,8 +449,17 @@ export class LiveOverlay {
     const r = this._find(kind, id);
     if (r && this.view) {
       const w = this.frame.geodeticToWorld(r.lat, r.lon);
-      const range = Math.max(r.altitudeM * this.view.chunks.exaggeration * 3, 6000);
-      this.view.lookAtPlane({ x: w.x, y: w.y, range, pitch: 0.6, animate: true });
+      const range = Math.max(
+        r.altitudeM * this.view.chunks.exaggeration * 3,
+        6000,
+      );
+      this.view.lookAtPlane({
+        x: w.x,
+        y: w.y,
+        range,
+        pitch: 0.6,
+        animate: true,
+      });
     }
   }
 
@@ -374,7 +472,10 @@ export class LiveOverlay {
   }
 
   _updateTracking(view) {
-    if (this.tracked?.kind === 'satellites' && Date.now() - (this.trackBuiltAt || 0) > 60000) {
+    if (
+      this.tracked?.kind === 'satellites' &&
+      Date.now() - (this.trackBuiltAt || 0) > 60000
+    ) {
       this._buildSatelliteTrack(this.tracked.id);
     }
     if (!this.tracked) {
@@ -399,8 +500,13 @@ export class LiveOverlay {
     this.trackMarker.visible = true;
     const screen = view.worldToScreen(r.drawn);
     if (screen && this.labels) {
-      const alt = r.kind === 'vessels' ? '' : ` · ${Math.round(r.altitudeM).toLocaleString()} m`;
-      const hdg = Number.isFinite(r.heading) ? ` · ${Math.round(r.heading)}°` : '';
+      const alt =
+        r.kind === 'vessels'
+          ? ''
+          : ` · ${Math.round(r.altitudeM).toLocaleString()} m`;
+      const hdg = Number.isFinite(r.heading)
+        ? ` · ${Math.round(r.heading)}°`
+        : '';
       this.labels.innerHTML = `<div class="flatworld-label" style="transform:translate(${Math.round(screen.x + 14)}px,${Math.round(screen.y - 10)}px)">${escapeHtml(r.label)}<span>${r.lat.toFixed(4)}, ${r.lon.toFixed(4)}${alt}${hdg}</span></div>`;
     }
   }
@@ -454,24 +560,37 @@ export class LiveOverlay {
           continue;
         }
         const dLat = Math.abs(d.lat - r.lat);
-        const dLon = Math.abs(r.lat) > 89.9999 ? 0 : Math.abs(wrap(d.lon - r.lon));
+        const dLon =
+          Math.abs(r.lat) > 89.9999 ? 0 : Math.abs(wrap(d.lon - r.lon));
         result.maxLatErrDeg = Math.max(result.maxLatErrDeg, dLat);
         result.maxLonErrDeg = Math.max(result.maxLonErrDeg, dLon);
-        result.maxAltErrM = Math.max(result.maxAltErrM, Math.abs(d.height - r.altitudeM));
+        result.maxAltErrM = Math.max(
+          result.maxAltErrM,
+          Math.abs(d.height - r.altitudeM),
+        );
         const f = r.fixes;
         const a = f[0];
         const b = f[f.length - 1];
         const tol = 1e-9;
-        const latOk = r.lat >= Math.min(a.lat, b.lat) - tol && r.lat <= Math.max(a.lat, b.lat) + tol;
+        const latOk =
+          r.lat >= Math.min(a.lat, b.lat) - tol &&
+          r.lat <= Math.max(a.lat, b.lat) + tol;
         const span = wrap(b.lon - a.lon);
         const along = wrap(r.lon - a.lon);
-        const lonOk = Math.abs(span) < 1e-12 ? Math.abs(along) < 1e-6 : along / span >= -1e-6 && along / span <= 1 + 1e-6;
+        const lonOk =
+          Math.abs(span) < 1e-12
+            ? Math.abs(along) < 1e-6
+            : along / span >= -1e-6 && along / span <= 1 + 1e-6;
         if (!latOk || !lonOk) result.offSegment += 1;
         const src = fresh.get(r.id);
         if (!src) result.missingFromSource += 1;
-        else if (src.lat === b.lat && src.lon === b.lon) result.latestFixMatchesSource += 1;
+        else if (src.lat === b.lat && src.lon === b.lon)
+          result.latestFixMatchesSource += 1;
         else result.sourceMovedSincePoll += 1;
-        result.lagFractionMax = Math.max(result.lagFractionMax || 0, 1 - (r.alpha ?? 1));
+        result.lagFractionMax = Math.max(
+          result.lagFractionMax || 0,
+          1 - (r.alpha ?? 1),
+        );
         n += 1;
       }
       result.byKind[kind] = n;
@@ -488,5 +607,11 @@ export class LiveOverlay {
 }
 
 function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  return String(s).replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[
+        c
+      ],
+  );
 }

@@ -51,10 +51,18 @@ async function loadTile(source, z, x, y) {
   const t0 = performance.now();
   try {
     lastUrl = source.url(z, x, y);
-    const response = await fetch(lastUrl, { signal: controller.signal, mode: 'cors' });
+    const response = await fetch(lastUrl, {
+      signal: controller.signal,
+      mode: 'cors',
+    });
     // 400/404: the tile does not exist (outside coverage) — a definitive, cacheable miss.
     // Anything else (429, 5xx, network) is transient and must not poison the cache.
-    if (response.status === 404 || response.status === 400 || response.status === 204) return null;
+    if (
+      response.status === 404 ||
+      response.status === 400 ||
+      response.status === 204
+    )
+      return null;
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const image = await decode(await response.blob());
     if (source.format === 'terrarium') {
@@ -86,11 +94,22 @@ self.onmessage = async (event) => {
   const msg = event.data;
   if (msg.type === 'config') {
     if (msg.iceParams) builder.setIceParams(msg.iceParams);
-    if (Number.isFinite(msg.rotationDeg)) builder.setDisplayRotation(msg.rotationDeg);
+    if (Number.isFinite(msg.rotationDeg))
+      builder.setDisplayRotation(msg.rotationDeg);
     return;
   }
   if (msg.type === 'status') {
-    self.postMessage({ type: 'status', id: msg.id, active, waiting: waiting.length, lastUrl, inflight: inflight.size, fetchStats, cache: imageryStore.stats, stats });
+    self.postMessage({
+      type: 'status',
+      id: msg.id,
+      active,
+      waiting: waiting.length,
+      lastUrl,
+      inflight: inflight.size,
+      fetchStats,
+      cache: imageryStore.stats,
+      stats,
+    });
     return;
   }
   if (msg.type === 'build') {
@@ -112,12 +131,25 @@ self.onmessage = async (event) => {
         result.rgba.buffer,
       ];
       self.postMessage(
-        { type: 'built', id: msg.id, result, ms, cache: imageryStore.stats, stats, fetchStats, queued: waiting.length },
+        {
+          type: 'built',
+          id: msg.id,
+          result,
+          ms,
+          cache: imageryStore.stats,
+          stats,
+          fetchStats,
+          queued: waiting.length,
+        },
         transfer,
       );
     } catch (error) {
       stats.failed += 1;
-      self.postMessage({ type: 'failed', id: msg.id, error: String(error?.stack || error) });
+      self.postMessage({
+        type: 'failed',
+        id: msg.id,
+        error: String(error?.stack || error),
+      });
     }
   }
 };

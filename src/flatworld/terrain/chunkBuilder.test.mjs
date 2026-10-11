@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createChunkBuilder, tileBounds, chunkIndices, ROOT_TILE_SIZE } from './chunkBuilder.js';
+import {
+  createChunkBuilder,
+  tileBounds,
+  chunkIndices,
+  ROOT_TILE_SIZE,
+} from './chunkBuilder.js';
 import { TileStore } from '../sources/sampler.js';
 
 // A fake source: flat 100 m elevation everywhere, no imagery.
@@ -32,7 +37,10 @@ test('a GPS chunk samples real elevation and is classified gps', async () => {
   const c = await builder.build({ ...t, grid: 8, texSize: 16 });
   assert.equal(c.domainMix, 'gps');
   assert.ok(Math.abs(c.maxH - 100) < 1e-6);
-  assert.equal(c.domain.every((d) => d === 0), true);
+  assert.equal(
+    c.domain.every((d) => d === 0),
+    true,
+  );
 });
 
 test('an ice chunk never carries geodetic up-vectors and is deterministic', async () => {
@@ -48,11 +56,16 @@ test('an ice chunk never carries geodetic up-vectors and is deterministic', asyn
 test('adjacent ice chunks share identical edge heights (seamless)', async () => {
   const t = tileAt(11, R + 900000, 300000);
   const left = await builder.build({ ...t, grid: 8, texSize: 8 });
-  const right = await builder.build({ ...t, tx: t.tx + 1, grid: 8, texSize: 8 });
+  const right = await builder.build({
+    ...t,
+    tx: t.tx + 1,
+    grid: 8,
+    texSize: 8,
+  });
   const G = 8;
   for (let j = 0; j <= G; j += 1) {
     const hl = left.position[(j * (G + 1) + G) * 3 + 1];
-    const hr = right.position[(j * (G + 1)) * 3 + 1];
+    const hr = right.position[j * (G + 1) * 3 + 1];
     assert.equal(hl, hr, `row ${j}`);
   }
 });

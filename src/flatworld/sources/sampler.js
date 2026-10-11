@@ -45,7 +45,8 @@ export class TileStore {
         entry.value = value;
         if (!value) {
           this.stats.failures += 1;
-          this.stats.failuresBySource[source.id] = (this.stats.failuresBySource[source.id] || 0) + 1;
+          this.stats.failuresBySource[source.id] =
+            (this.stats.failuresBySource[source.id] || 0) + 1;
         }
         return value;
       });
@@ -96,12 +97,19 @@ export class ChunkSampler {
     const seen = new Set();
     while (wave.length) {
       const results = await Promise.all(
-        wave.map((t) => this.store.get(t.source, t.z, t.tx, t.ty).then((v) => ({ t, v }))),
+        wave.map((t) =>
+          this.store.get(t.source, t.z, t.tx, t.ty).then((v) => ({ t, v })),
+        ),
       );
       const next = [];
       for (const { t, v } of results) {
         if (v || t.z <= t.source.scheme.minZoom) continue;
-        const parent = { source: t.source, z: t.z - 1, tx: t.tx >> 1, ty: t.ty >> 1 };
+        const parent = {
+          source: t.source,
+          z: t.z - 1,
+          tx: t.tx >> 1,
+          ty: t.ty >> 1,
+        };
         const key = `${parent.source.id}/${parent.z}/${parent.tx}/${parent.ty}`;
         if (!seen.has(key)) {
           seen.add(key);
@@ -144,7 +152,8 @@ export class ChunkSampler {
       const p10 = d[(y0 * w + x1) * 4 + c];
       const p01 = d[(y1 * w + x0) * 4 + c];
       const p11 = d[(y1 * w + x1) * 4 + c];
-      out[c] = (p00 * (1 - u) + p10 * u) * (1 - v) + (p01 * (1 - u) + p11 * u) * v;
+      out[c] =
+        (p00 * (1 - u) + p10 * u) * (1 - v) + (p01 * (1 - u) + p11 * u) * v;
     }
     return out;
   }

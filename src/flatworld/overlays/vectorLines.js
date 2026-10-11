@@ -41,7 +41,10 @@ export class VectorLines {
     if (Math.abs(a[0]) >= 179.99 && Math.abs(b[0]) >= 179.99) return;
     if (a[1] <= -89.99 || b[1] <= -89.99) return;
     const dLat = b[1] - a[1];
-    const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dLon), Math.abs(dLat)) / MAX_STEP_DEG));
+    const steps = Math.max(
+      1,
+      Math.ceil(Math.max(Math.abs(dLon), Math.abs(dLat)) / MAX_STEP_DEG),
+    );
     let prev = a;
     for (let s = 1; s <= steps; s += 1) {
       const t = s / steps;
@@ -58,7 +61,9 @@ export class VectorLines {
         for (const ring of poly) {
           const pts = decodeRing(ring);
           for (let i = 0; i < pts.length; i += 1) {
-            this._densify(pts[i], pts[(i + 1) % pts.length], (a, b) => segs.push(a, b));
+            this._densify(pts[i], pts[(i + 1) % pts.length], (a, b) =>
+              segs.push(a, b),
+            );
           }
         }
       }
@@ -71,18 +76,24 @@ export class VectorLines {
     // 24 meridians every 15° (as printed on the 1892 Gleason map) and parallels every 15°,
     // plus the tropics and polar circles.
     for (let lon = -180; lon < 180; lon += 15) {
-      for (let lat = 90; lat > -90; lat -= 1) segs.push([lon, lat], [lon, lat - 1]);
+      for (let lat = 90; lat > -90; lat -= 1)
+        segs.push([lon, lat], [lon, lat - 1]);
     }
-    const parallels = [75, 60, 45, 30, 15, 0, -15, -30, -45, -60, -75, 23.436, -23.436, 66.564, -66.564];
+    const parallels = [
+      75, 60, 45, 30, 15, 0, -15, -30, -45, -60, -75, 23.436, -23.436, 66.564,
+      -66.564,
+    ];
     for (const lat of parallels) {
-      for (let lon = -180; lon < 180; lon += 1) segs.push([lon, lat], [lon + 1, lat]);
+      for (let lon = -180; lon < 180; lon += 1)
+        segs.push([lon, lat], [lon + 1, lat]);
     }
     return segs;
   }
 
   _rimSegments() {
     const segs = [];
-    for (let lon = -180; lon < 180; lon += 0.5) segs.push([lon, -90], [lon + 0.5, -90]);
+    for (let lon = -180; lon < 180; lon += 0.5)
+      segs.push([lon, -90], [lon + 0.5, -90]);
     return segs;
   }
 
@@ -91,15 +102,30 @@ export class VectorLines {
     let n = 0;
     for (let i = 0; i < segments.length; i += 2) {
       // Natural Earth rounding can put Antarctic vertices a hair beyond ±90°; clamp them.
-      const a = this.frame.geodeticToWorld(Math.max(-90, Math.min(90, segments[i][1])), segments[i][0]);
-      const b = this.frame.geodeticToWorld(Math.max(-90, Math.min(90, segments[i + 1][1])), segments[i + 1][0]);
+      const a = this.frame.geodeticToWorld(
+        Math.max(-90, Math.min(90, segments[i][1])),
+        segments[i][0],
+      );
+      const b = this.frame.geodeticToWorld(
+        Math.max(-90, Math.min(90, segments[i + 1][1])),
+        segments[i + 1][0],
+      );
       if (!a || !b) continue;
       pos.set([a.x, 0, -a.y, b.x, 0, -b.y], n);
       n += 6;
     }
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(pos.subarray(0, n), 3));
-    const m = new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthTest: false, fog: false });
+    g.setAttribute(
+      'position',
+      new THREE.BufferAttribute(pos.subarray(0, n), 3),
+    );
+    const m = new THREE.LineBasicMaterial({
+      color,
+      transparent: true,
+      opacity,
+      depthTest: false,
+      fog: false,
+    });
     const lines = new THREE.LineSegments(g, m);
     lines.frustumCulled = false;
     lines.renderOrder = 5;

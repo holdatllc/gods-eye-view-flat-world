@@ -12,7 +12,11 @@ import {
   tilePixelToLonLat,
   transferables,
 } from './buildingsWorker.js';
-import { lonLatToTile, makeHeightSampler, tileToLonLat } from './buildingsLayer.js';
+import {
+  lonLatToTile,
+  makeHeightSampler,
+  tileToLonLat,
+} from './buildingsLayer.js';
 import { createWorldFrame } from '../projection/domains.js';
 import { ChunkManager } from '../terrain/chunkManager.js';
 
@@ -107,30 +111,93 @@ const reversed = (r) => [...r].reverse();
 
 const FEATURES = {
   building: [
-    { id: 10, type: 3, rings: [square(1000, 1000, 1100, 1100)], properties: { render_height: 30, render_min_height: 0, colour: '#ff0000' } },
+    {
+      id: 10,
+      type: 3,
+      rings: [square(1000, 1000, 1100, 1100)],
+      properties: {
+        render_height: 30,
+        render_min_height: 0,
+        colour: '#ff0000',
+      },
+    },
     {
       id: 20,
       type: 3,
-      rings: [square(2000, 2000, 2400, 2400), reversed(square(2100, 2100, 2300, 2300))],
+      rings: [
+        square(2000, 2000, 2400, 2400),
+        reversed(square(2100, 2100, 2300, 2300)),
+      ],
       properties: { render_height: 12, render_min_height: 0 },
     },
-    { id: 30, type: 3, rings: [square(1000, 1000, 1100, 1100)], properties: { render_height: 444, render_min_height: 0, hide_3d: true } },
-    { id: 40, type: 3, rings: [square(4000, 500, 4150, 600)], properties: { render_height: 20, render_min_height: 0 } },
-    { id: 50, type: 3, rings: [square(3000, 3000, 3040, 3040)], properties: { render_height: 80, render_min_height: 50 } },
+    {
+      id: 30,
+      type: 3,
+      rings: [square(1000, 1000, 1100, 1100)],
+      properties: { render_height: 444, render_min_height: 0, hide_3d: true },
+    },
+    {
+      id: 40,
+      type: 3,
+      rings: [square(4000, 500, 4150, 600)],
+      properties: { render_height: 20, render_min_height: 0 },
+    },
+    {
+      id: 50,
+      type: 3,
+      rings: [square(3000, 3000, 3040, 3040)],
+      properties: { render_height: 80, render_min_height: 50 },
+    },
   ],
   transportation: [
-    { id: 1, type: 2, rings: [[[-100, 2048], [4200, 2048]]], properties: { class: 'primary' } },
-    { id: 2, type: 2, rings: [[[100, 100], [900, 900]]], properties: { class: 'primary', brunnel: 'tunnel' } },
-    { id: 3, type: 2, rings: [[[100, 300], [900, 300]]], properties: { class: 'ferry' } },
+    {
+      id: 1,
+      type: 2,
+      rings: [
+        [
+          [-100, 2048],
+          [4200, 2048],
+        ],
+      ],
+      properties: { class: 'primary' },
+    },
+    {
+      id: 2,
+      type: 2,
+      rings: [
+        [
+          [100, 100],
+          [900, 900],
+        ],
+      ],
+      properties: { class: 'primary', brunnel: 'tunnel' },
+    },
+    {
+      id: 3,
+      type: 2,
+      rings: [
+        [
+          [100, 300],
+          [900, 300],
+        ],
+      ],
+      properties: { class: 'ferry' },
+    },
   ],
 };
 
 const frame = createWorldFrame();
 const bytes = encodeTile(FEATURES);
-const result = buildTile(bytes, { z: Z, x: TX, y: TY, frame, probe: (() => {
-  const [lon, lat] = tilePixelToLonLat(Z, TX, TY, 1050, 1050, E);
-  return { lat, lon };
-})() });
+const result = buildTile(bytes, {
+  z: Z,
+  x: TX,
+  y: TY,
+  frame,
+  probe: (() => {
+    const [lon, lat] = tilePixelToLonLat(Z, TX, TY, 1050, 1050, E);
+    return { lat, lon };
+  })(),
+});
 const B = result.buildings;
 const R = result.roads;
 
@@ -165,11 +232,42 @@ test('ring and line clipping to the tile square', () => {
   assert.equal(c.clipped, true);
   assert.ok(c.points.every(([x, y]) => x >= 0 && x <= E && y >= 0 && y <= E));
   assert.equal(c.points.filter(([x]) => x === E).length, 2);
-  const pieces = clipLine([[-100, 10], [5000, 10]], E);
-  assert.deepEqual(pieces, [[[0, 10], [E, 10]]]);
-  assert.deepEqual(clipLine([[-100, -10], [-5, -50]], E), []);
+  const pieces = clipLine(
+    [
+      [-100, 10],
+      [5000, 10],
+    ],
+    E,
+  );
+  assert.deepEqual(pieces, [
+    [
+      [0, 10],
+      [E, 10],
+    ],
+  ]);
+  assert.deepEqual(
+    clipLine(
+      [
+        [-100, -10],
+        [-5, -50],
+      ],
+      E,
+    ),
+    [],
+  );
   // A line leaving and re-entering the tile becomes two pieces.
-  assert.equal(clipLine([[10, 10], [10, -50], [20, -50], [20, 10]], E).length, 2);
+  assert.equal(
+    clipLine(
+      [
+        [10, 10],
+        [10, -50],
+        [20, -50],
+        [20, 10],
+      ],
+      E,
+    ).length,
+    2,
+  );
 });
 
 test('buildings: counts, hide_3d, foundations and float32 tile-local positions', () => {
@@ -183,16 +281,23 @@ test('buildings: counts, hide_3d, foundations and float32 tile-local positions',
   assert.ok(B.lod[0] <= B.lod[1] && B.lod[1] <= B.lod[2]);
   for (const v of B.position) assert.ok(Number.isFinite(v));
   for (let i = 0; i < B.position.length; i += 3) {
-    assert.ok(Math.abs(B.position[i]) < 2500 && Math.abs(B.position[i + 2]) < 2500, 'tile-local coordinates stay small');
+    assert.ok(
+      Math.abs(B.position[i]) < 2500 && Math.abs(B.position[i + 2]) < 2500,
+      'tile-local coordinates stay small',
+    );
   }
   const y = (v) => B.position[v * 3 + 1];
   for (let s = 0; s < B.count; s += 1) {
     const top = y(B.vstart[s]);
     // Roof vertices first (all at the top), then wall quads: two bottom vertices, two top.
-    for (let v = B.vstart[s]; v < B.wallStart[s]; v += 1) assert.equal(y(v), top);
+    for (let v = B.vstart[s]; v < B.wallStart[s]; v += 1)
+      assert.equal(y(v), top);
     for (let v = B.wallStart[s]; v < B.vstart[s + 1]; v += 4) {
       const bottom = B.ground[s] ? -FOUNDATION_M : 50;
-      assert.deepEqual([y(v), y(v + 1), y(v + 2), y(v + 3)], [bottom, bottom, top, top]);
+      assert.deepEqual(
+        [y(v), y(v + 1), y(v + 2), y(v + 3)],
+        [bottom, bottom, top, top],
+      );
     }
   }
   // The raised part (50–80 m) starts above ground; the others are ground-level with foundations.
@@ -209,7 +314,10 @@ test('buildings: every triangle faces along its normal; walls point away from th
   for (let i = 0; i < B.index.length; i += 3) {
     const [a, b, c] = [B.index[i], B.index[i + 1], B.index[i + 2]];
     const n = cross(p, a, b, c);
-    const dot = n[0] * B.normal[a * 3] + n[1] * B.normal[a * 3 + 1] + n[2] * B.normal[a * 3 + 2];
+    const dot =
+      n[0] * B.normal[a * 3] +
+      n[1] * B.normal[a * 3 + 1] +
+      n[2] * B.normal[a * 3 + 2];
     assert.ok(dot > 0, `triangle ${i / 3} winds against its normal`);
   }
   // Inside/outside test against each building's own roof triangles.
@@ -219,14 +327,23 @@ test('buildings: every triangle faces along its normal; walls point away from th
     const tris = [];
     for (let i = 0; i < B.index.length; i += 3) {
       const a = B.index[i];
-      if (a >= v0 && a < v1 && B.normal[a * 3 + 1] === 127) tris.push([a, B.index[i + 1], B.index[i + 2]]);
+      if (a >= v0 && a < v1 && B.normal[a * 3 + 1] === 127)
+        tris.push([a, B.index[i + 1], B.index[i + 2]]);
     }
     const inside = (x, z) =>
       tris.some(([a, b, c]) => {
-        const s1 = (p[b * 3] - p[a * 3]) * (z - p[a * 3 + 2]) - (p[b * 3 + 2] - p[a * 3 + 2]) * (x - p[a * 3]);
-        const s2 = (p[c * 3] - p[b * 3]) * (z - p[b * 3 + 2]) - (p[c * 3 + 2] - p[b * 3 + 2]) * (x - p[b * 3]);
-        const s3 = (p[a * 3] - p[c * 3]) * (z - p[c * 3 + 2]) - (p[a * 3 + 2] - p[c * 3 + 2]) * (x - p[c * 3]);
-        return (s1 >= 0 && s2 >= 0 && s3 >= 0) || (s1 <= 0 && s2 <= 0 && s3 <= 0);
+        const s1 =
+          (p[b * 3] - p[a * 3]) * (z - p[a * 3 + 2]) -
+          (p[b * 3 + 2] - p[a * 3 + 2]) * (x - p[a * 3]);
+        const s2 =
+          (p[c * 3] - p[b * 3]) * (z - p[b * 3 + 2]) -
+          (p[c * 3 + 2] - p[b * 3 + 2]) * (x - p[b * 3]);
+        const s3 =
+          (p[a * 3] - p[c * 3]) * (z - p[c * 3 + 2]) -
+          (p[a * 3 + 2] - p[c * 3 + 2]) * (x - p[c * 3]);
+        return (
+          (s1 >= 0 && s2 >= 0 && s3 >= 0) || (s1 <= 0 && s2 <= 0 && s3 <= 0)
+        );
       });
     let walls = 0;
     for (let v = B.wallStart[s]; v < v1; v += 4) {
@@ -236,8 +353,14 @@ test('buildings: every triangle faces along its normal; walls point away from th
       const mz = (p[v * 3 + 2] + p[(v + 1) * 3 + 2]) / 2;
       const nx = B.normal[v * 3] / 127;
       const nz = B.normal[v * 3 + 2] / 127;
-      assert.ok(inside(mx - nx * 0.3, mz - nz * 0.3), `building ${s}: wall ${walls} inner side is inside`);
-      assert.ok(!inside(mx + nx * 0.3, mz + nz * 0.3), `building ${s}: wall ${walls} outer side is outside`);
+      assert.ok(
+        inside(mx - nx * 0.3, mz - nz * 0.3),
+        `building ${s}: wall ${walls} inner side is inside`,
+      );
+      assert.ok(
+        !inside(mx + nx * 0.3, mz + nz * 0.3),
+        `building ${s}: wall ${walls} outer side is outside`,
+      );
     }
     assert.ok(walls >= 3);
   }
@@ -249,38 +372,59 @@ test('courtyard hole and tile-edge seam: roof area and wall counts', () => {
     let area = 0;
     for (let i = 0; i < B.index.length; i += 3) {
       const [a, b, c] = [B.index[i], B.index[i + 1], B.index[i + 2]];
-      if (a < B.vstart[s] || a >= B.vstart[s + 1] || B.normal[a * 3 + 1] !== 127) continue;
+      if (
+        a < B.vstart[s] ||
+        a >= B.vstart[s + 1] ||
+        B.normal[a * 3 + 1] !== 127
+      )
+        continue;
       area += Math.hypot(...cross(p, a, b, c)) / 2;
     }
     return area;
   };
   const wallCount = (s) => {
     let n = 0;
-    for (let v = B.vstart[s]; v < B.vstart[s + 1]; v += 1) if (B.normal[v * 3 + 1] === 0) n += 1;
+    for (let v = B.vstart[s]; v < B.vstart[s + 1]; v += 1)
+      if (B.normal[v * 3 + 1] === 0) n += 1;
     return n / 4;
   };
   const roofVerts = (s) => {
     let n = 0;
-    for (let v = B.vstart[s]; v < B.vstart[s + 1]; v += 1) if (B.normal[v * 3 + 1] === 127) n += 1;
+    for (let v = B.vstart[s]; v < B.vstart[s + 1]; v += 1)
+      if (B.normal[v * 3 + 1] === 127) n += 1;
     return n;
   };
   const courtyard = [...Array(B.count).keys()].find((s) => roofVerts(s) === 8);
   assert.equal(wallCount(courtyard), 8, 'outer + inner walls');
-  const scale = (px) => px * ((40075016.686 * Math.cos(40.75 * (Math.PI / 180))) / 2 ** Z / E);
+  const scale = (px) =>
+    px * ((40075016.686 * Math.cos(40.75 * (Math.PI / 180))) / 2 ** Z / E);
   const k = frame.projection.scaleFactors(40.75).k; // AEQD stretches east-west by k
   const expected = (scale(400) ** 2 - scale(200) ** 2) * k;
-  assert.ok(Math.abs(roofArea(courtyard) / expected - 1) < 0.01, `courtyard roof ${roofArea(courtyard)} vs ${expected}`);
+  assert.ok(
+    Math.abs(roofArea(courtyard) / expected - 1) < 0.01,
+    `courtyard roof ${roofArea(courtyard)} vs ${expected}`,
+  );
   // The building cut by the tile edge keeps 3 walls; the seam on the tile edge gets none.
-  const cut = [...Array(B.count).keys()].find((s) => roofVerts(s) === 4 && wallCount(s) === 3);
+  const cut = [...Array(B.count).keys()].find(
+    (s) => roofVerts(s) === 4 && wallCount(s) === 3,
+  );
   assert.ok(Number.isInteger(cut), 'clipped building has exactly three walls');
 });
 
 test('every rendered roof vertex inverts to its source lat/lon within 1e-9°', () => {
   const probe = result.probes.find((q) => !q.hidden);
   const hidden = result.probes.find((q) => q.hidden);
-  assert.ok(probe && hidden, 'probe finds the visible footprint and the hide_3d outline');
+  assert.ok(
+    probe && hidden,
+    'probe finds the visible footprint and the hide_3d outline',
+  );
   assert.equal(probe.roofCount, 4);
-  assert.deepEqual(probe.roofLocal, Array.from(B.position.subarray(probe.roofStart * 3, (probe.roofStart + 4) * 3)));
+  assert.deepEqual(
+    probe.roofLocal,
+    Array.from(
+      B.position.subarray(probe.roofStart * 3, (probe.roofStart + 4) * 3),
+    ),
+  );
   let worst = 0;
   for (let i = 0; i < probe.roofCount; i += 1) {
     const v = probe.roofStart + i;
@@ -288,17 +432,29 @@ test('every rendered roof vertex inverts to its source lat/lon within 1e-9°', (
     const y = result.origin.y - B.position[v * 3 + 2];
     const d = frame.worldToDomain(x, y, 0);
     assert.equal(d.domain, 'gps');
-    worst = Math.max(worst, Math.abs(d.lat - probe.roofLatLon[i][0]), Math.abs(d.lon - probe.roofLatLon[i][1]));
+    worst = Math.max(
+      worst,
+      Math.abs(d.lat - probe.roofLatLon[i][0]),
+      Math.abs(d.lon - probe.roofLatLon[i][1]),
+    );
   }
   assert.ok(worst < 1e-9, `worst vertex error ${worst}°`);
   const w = frame.geodeticToWorld(probe.centroid.lat, probe.centroid.lon, 0);
   const back = frame.worldToDomain(w.x, w.y, 0);
-  assert.ok(Math.abs(back.lat - probe.centroid.lat) < 1e-12 && Math.abs(back.lon - probe.centroid.lon) < 1e-12);
+  assert.ok(
+    Math.abs(back.lat - probe.centroid.lat) < 1e-12 &&
+      Math.abs(back.lon - probe.centroid.lon) < 1e-12,
+  );
   // The centroid is the mean of the source footprint's vertex lat/lons.
-  const corners = square(1000, 1000, 1100, 1100).map(([px, py]) => tilePixelToLonLat(Z, TX, TY, px, py, E));
+  const corners = square(1000, 1000, 1100, 1100).map(([px, py]) =>
+    tilePixelToLonLat(Z, TX, TY, px, py, E),
+  );
   const clat = corners.reduce((s, c) => s + c[1], 0) / 4;
   const clon = corners.reduce((s, c) => s + c[0], 0) / 4;
-  assert.ok(Math.abs(probe.centroid.lat - clat) < 1e-12 && Math.abs(probe.centroid.lon - clon) < 1e-12);
+  assert.ok(
+    Math.abs(probe.centroid.lat - clat) < 1e-12 &&
+      Math.abs(probe.centroid.lon - clon) < 1e-12,
+  );
 });
 
 test('roads: tunnels and ferries skipped, ribbon clipped to the tile, faces up, true width', () => {
@@ -310,9 +466,15 @@ test('roads: tunnels and ferries skipped, ribbon clipped to the tile, faces up, 
   }
   // One straight primary road across the whole tile, densified to ≤ 24 m.
   const metres = (40075016.686 * Math.cos(40.75 * (Math.PI / 180))) / 2 ** Z;
-  assert.ok(R.count >= Math.floor(metres / 24) && R.count <= Math.ceil(metres / 24) + 2, `samples ${R.count}`);
+  assert.ok(
+    R.count >= Math.floor(metres / 24) && R.count <= Math.ceil(metres / 24) + 2,
+    `samples ${R.count}`,
+  );
   for (let s = 0; s < R.count; s += 1) {
-    const w = Math.hypot(R.position[s * 6] - R.position[s * 6 + 3], R.position[s * 6 + 2] - R.position[s * 6 + 5]);
+    const w = Math.hypot(
+      R.position[s * 6] - R.position[s * 6 + 3],
+      R.position[s * 6 + 2] - R.position[s * 6 + 5],
+    );
     assert.ok(Math.abs(w - 11) < 0.05, `width ${w}`);
   }
 });
@@ -324,7 +486,8 @@ test('colours: OSM colours parse; palette stays neutral and in range', () => {
   assert.equal(parseColour('not a colour'), null);
   for (const h of [3, 8, 30, 120, 400]) {
     const c = buildingColours(h, 12345, h > 100 ? '#5a81a0' : undefined);
-    for (const v of [...c.wall, ...c.roof, ...c.base]) assert.ok(v > 0 && v < 1);
+    for (const v of [...c.wall, ...c.roof, ...c.base])
+      assert.ok(v > 0 && v < 1);
     const spread = Math.max(...c.wall) - Math.min(...c.wall);
     assert.ok(spread < 0.2, 'neutral (low saturation)');
   }
@@ -341,7 +504,11 @@ test('fast terrain sampler equals ChunkManager.heightAt (finest loaded chunk, bi
     const y0 = ty * size - ROOT / 2;
     const pos = new Float32Array((grid + 1) ** 2 * 3);
     for (let j = 0; j <= grid; j += 1)
-      for (let i = 0; i <= grid; i += 1) pos[(j * (grid + 1) + i) * 3 + 1] = fn(x0 + (i * size) / grid, y0 + (j * size) / grid);
+      for (let i = 0; i <= grid; i += 1)
+        pos[(j * (grid + 1) + i) * 3 + 1] = fn(
+          x0 + (i * size) / grid,
+          y0 + (j * size) / grid,
+        );
     fake.chunks.set(fake.key(level, tx, ty), {
       level,
       x0,
@@ -356,13 +523,18 @@ test('fast terrain sampler equals ChunkManager.heightAt (finest loaded chunk, bi
   const tx = Math.floor((1514000 + ROOT / 2) / size);
   const ty = Math.floor((-5276000 + ROOT / 2) / size);
   add(L, tx, ty, (x, y) => 10 + 1e-3 * (x - 1514000) + 2e-3 * (y + 5276000));
-  add(L + 1, tx * 2 + 1, ty * 2, (x, y) => 12 + Math.sin(x / 300) * 3 + Math.cos(y / 200) * 2);
+  add(
+    L + 1,
+    tx * 2 + 1,
+    ty * 2,
+    (x, y) => 12 + Math.sin(x / 300) * 3 + Math.cos(y / 200) * 2,
+  );
   const x0 = tx * size - ROOT / 2;
   const y0 = ty * size - ROOT / 2;
   const b = { minX: x0, minY: y0, maxX: x0 + size, maxY: y0 + size };
   const h = makeHeightSampler(fake, b);
   let seed = 3;
-  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   for (let i = 0; i < 2000; i += 1) {
     const x = x0 - 50 + rnd() * (size + 100);
     const y = y0 - 50 + rnd() * (size + 100);

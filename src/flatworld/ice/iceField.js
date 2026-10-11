@@ -38,7 +38,10 @@ export const DEFAULT_ICE_PARAMS = Object.freeze({
 // Seeded hashing and gradient noise (unbounded integer lattice; float64 inputs).
 
 function hash2(ix, iy, seed) {
-  let h = Math.imul(ix | 0, 0x27d4eb2d) ^ Math.imul(iy | 0, 0x165667b1) ^ Math.imul(seed | 0, 0x9e3779b9);
+  let h =
+    Math.imul(ix | 0, 0x27d4eb2d) ^
+    Math.imul(iy | 0, 0x165667b1) ^
+    Math.imul(seed | 0, 0x9e3779b9);
   h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
   h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
   return (h ^ (h >>> 16)) >>> 0;
@@ -66,7 +69,10 @@ export function gradientNoise(x, y, seed) {
   const n11 = g(ix + 1, iy + 1, fx - 1, fy - 1);
   const u = fade(fx);
   const v = fade(fy);
-  return 1.4142 * ((n00 * (1 - u) + n10 * u) * (1 - v) + (n01 * (1 - u) + n11 * u) * v);
+  return (
+    1.4142 *
+    ((n00 * (1 - u) + n10 * u) * (1 - v) + (n01 * (1 - u) + n11 * u) * v)
+  );
 }
 
 function fbm(x, y, seed, octaves, lacunarity = 2.03, gain = 0.5) {
@@ -161,11 +167,16 @@ export function createIceField(overrides = {}, { boundaryRadius }) {
     const swell = p.swellAmplitudeM * fbm(x / 1.6e6, y / 1.6e6, s + 1, 4);
     const coverage = fbm(x / 3.5e5, y / 3.5e5, s + 5, 4);
     const edge = 0.5 - p.rangeCoverage; // fbm is roughly symmetric about 0
-    const rangeMask = smoothstep(edge * 0.5 - 0.12, edge * 0.5 + 0.18, coverage);
+    const rangeMask = smoothstep(
+      edge * 0.5 - 0.12,
+      edge * 0.5 + 0.18,
+      coverage,
+    );
 
     // Domain-warped ridged multifractal: sharp arêtes and peaks.
     const wx = x / ms + 1.6 * fbm(x / (ms * 4.3), y / (ms * 4.3), s + 11, 3);
-    const wy = y / ms + 1.6 * fbm(x / (ms * 3.9) + 40, y / (ms * 3.9) - 13, s + 23, 3);
+    const wy =
+      y / ms + 1.6 * fbm(x / (ms * 3.9) + 40, y / (ms * 3.9) - 13, s + 23, 3);
     const ridges = ridged(wx, wy, s + 7, 8);
     const peaks = Math.pow(Math.min(1, ridges * 1.15), 1.7);
     const mountains = p.mountainAmplitudeM * Math.pow(rangeMask, 0.8) * peaks;
@@ -177,20 +188,27 @@ export function createIceField(overrides = {}, { boundaryRadius }) {
     const carve = p.glacierDepthM * glacier * (0.4 + 0.6 * peaks);
 
     // Ice-sheet surface: gentle undulation, plus metre-scale sastrugi.
-    const sheet = 140 * fbm(x / 22000, y / 22000, s + 31, 4) + 1.6 * gradientNoise(x / 45, y / 120, s + 41);
+    const sheet =
+      140 * fbm(x / 22000, y / 22000, s + 31, 4) +
+      1.6 * gradientNoise(x / 45, y / 120, s + 41);
 
     let h = p.rimHeightM + t * (swell + mountains - carve + sheet);
 
     // Escarpments: terraced ice cliffs where ranges meet the sheet.
-    const cliffZone = p.cliffAmount * smoothstep(0.1, 0.5, rangeMask) * smoothstep(-0.1, 0.35, fbm(x / 80000, y / 80000, s + 17, 3));
+    const cliffZone =
+      p.cliffAmount *
+      smoothstep(0.1, 0.5, rangeMask) *
+      smoothstep(-0.1, 0.35, fbm(x / 80000, y / 80000, s + 17, 3));
     if (cliffZone > 0) {
       // Riser height and phase wander so escarpments read as broken ice cliffs, not strata.
-      const step = p.cliffStepM * (1 + 0.45 * fbm(x / 30000, y / 30000, s + 19, 2));
+      const step =
+        p.cliffStepM * (1 + 0.45 * fbm(x / 30000, y / 30000, s + 19, 2));
       const offset = 0.5 * step * gradientNoise(x / 9000, y / 9000, s + 21);
       const q = (h - p.rimHeightM + offset) / step;
       const fl = Math.floor(q);
       const sharp = 0.8 + 0.12 * gradientNoise(x / 4000, y / 4000, s + 23);
-      const terraced = p.rimHeightM - offset + (fl + smoothstep(sharp, 1, q - fl)) * step;
+      const terraced =
+        p.rimHeightM - offset + (fl + smoothstep(sharp, 1, q - fl)) * step;
       h += t * cliffZone * (terraced - h);
     }
 
@@ -199,14 +217,23 @@ export function createIceField(overrides = {}, { boundaryRadius }) {
     const snow = Math.min(1, p.snowFill * lowland + glacier * 0.3 + 0.4);
 
     // Crevasse fields where glaciers flow and around cliff edges, oriented across the flow.
-    const crevasseZone = p.crevasseDensity > 0
-      ? Math.max(glacier * 1.3, cliffZone * 0.8) * smoothstep(-0.2, 0.3, fbm(x / 15000, y / 15000, s + 29, 3))
-      : 0;
+    const crevasseZone =
+      p.crevasseDensity > 0
+        ? Math.max(glacier * 1.3, cliffZone * 0.8) *
+          smoothstep(-0.2, 0.3, fbm(x / 15000, y / 15000, s + 29, 3))
+        : 0;
     const crevasse = crevasseAt(x, y, crevasseZone);
     h -= t * crevasse * p.crevasseDepthM;
 
-    const relief = Math.max(0, (mountains - carve) / Math.max(1, p.mountainAmplitudeM));
-    const rock = t * rangeMask * smoothstep(0.32, 0.62, relief) * smoothstep(0.3, 0.7, peaks);
+    const relief = Math.max(
+      0,
+      (mountains - carve) / Math.max(1, p.mountainAmplitudeM),
+    );
+    const rock =
+      t *
+      rangeMask *
+      smoothstep(0.32, 0.62, relief) *
+      smoothstep(0.3, 0.7, peaks);
     const blueIce = t * Math.min(1, glacier * 0.9 + cliffZone * 0.9);
     return {
       height: h,
@@ -229,7 +256,9 @@ export function createIceField(overrides = {}, { boundaryRadius }) {
     const u = (x * ca + y * sa) / 38 + jitter;
     const v = (-x * sa + y * ca) / 260;
     const { f1, f2 } = worley(u, v, s + 37);
-    return Math.min(1, zone) * p.crevasseDensity * smoothstep(0.11, 0.0, f2 - f1);
+    return (
+      Math.min(1, zone) * p.crevasseDensity * smoothstep(0.11, 0.0, f2 - f1)
+    );
   }
 
   return { params: p, sample, crevasseAt };
@@ -238,7 +267,9 @@ export function createIceField(overrides = {}, { boundaryRadius }) {
 /** sRGB colour of an ice-domain surface sample (0–255 each), with a little deterministic grain. */
 export function iceColor(sampleResult, x, y, slope, seed = 1892) {
   const { rock, blueIce, crevasse, snow } = sampleResult;
-  const grain = 0.035 * gradientNoise(x / 7.3, y / 7.3, seed + 99) + 0.03 * gradientNoise(x / 61, y / 61, seed + 98);
+  const grain =
+    0.035 * gradientNoise(x / 7.3, y / 7.3, seed + 99) +
+    0.03 * gradientNoise(x / 61, y / 61, seed + 98);
   const drift = 0.05 * gradientNoise(x / 900, y / 2600, seed + 97); // wind-blown snow streaks
   // Fresh snow → wind-packed firn → polished blue ice → exposed rock → crevasse shadow.
   let r = 0.94 + grain + drift * 0.5;
