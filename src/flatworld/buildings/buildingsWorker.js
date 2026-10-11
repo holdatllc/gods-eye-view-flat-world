@@ -11,13 +11,15 @@
  * Positions ship as float32 relative to that origin (≤ ~1.5 km away, so ≈0.1 mm precision); the
  * origin stays float64 on the main thread.
  *
- * Heights are applied on the main thread, which places each building on the rendered terrain and
- * scales heights by the terrain exaggeration. For that each part carries:
- *   - `rel`     per vertex: metres above the building's ground (unexaggerated),
- *   - `foot`    per vertex: 1 for foundation vertices that reach below the lowest ground under the
- *               footprint (so buildings on slopes never float),
- *   - `samples` per building: ground sample point (full-footprint centroid) and footprint bbox,
- *   - `vstart`  per building: its contiguous vertex range.
+ * Vertex y is the height above the building's own ground in metres (unexaggerated); foundation
+ * vertices sit FOUNDATION_M below it. The main thread supplies the ground per vertex (attribute
+ * `aGround`, sampled from the rendered terrain) and the shader draws y = aGround + y · exaggeration.
+ * For that each building part carries:
+ *   - `samples`   per building: ground sample point (full-footprint centroid) and footprint bbox,
+ *   - `vstart`    per building: its contiguous vertex range (roof vertices first, then walls),
+ *   - `wallStart` per building: first wall vertex; walls are quads (2 bottom, 2 top vertices),
+ *   - `ground`    per building: 1 when its walls start at ground level (bottoms are foundations,
+ *                 placed on the lowest ground under the footprint so buildings on slopes never float).
  * Roads carry one ground sample per centreline point (two ribbon vertices each).
  *
  * Data: © OpenStreetMap contributors (ODbL) via OpenFreeMap / OpenMapTiles.
@@ -36,6 +38,8 @@ const DEG = Math.PI / 180;
 export const ROAD_STEP_M = 24;
 /** Per-rank vertical separation of overlapping road classes (metres, before exaggeration). */
 const ROAD_RANK_LIFT_M = 0.08;
+/** Ground-level walls reach this far below the lowest ground sampled under the footprint. */
+export const FOUNDATION_M = 2;
 
 /**
  * Level-of-detail class of a building: 0 = tall or large (drawn at every distance), 1 = mid-size,
@@ -184,6 +188,11 @@ class Grow {
   done() {
     return this.a.slice(0, this.n);
   }
+}
+
+/** Index buffer in the smallest type that fits. */
+function indexArray(grow, vertexCount) {
+  return vertexCount <= 65535 ? Uint16Array.from(grow.a.subarray(0, grow.n)) : grow.done();
 }
 
 /** Convert an MVT ring (array of {x, y}, closed) into an open array of [x, y] without repeats. */
@@ -414,11 +423,13 @@ function buildBuildings(layer, ctx, probe) {
   const position = new Grow(Float32Array, 1 << 16);
   const normal = new Grow(Int8Array, 1 << 16);
   const color = new Grow(Uint8Array, 1 << 16);
-  const rel = new Grow(Float32Array, 1 << 14);
-  const foot = new Grow(Uint8Array, 1 << 14);
   const index = new Grow(Uint32Array, 1 << 16);
   const samples = new Grow(Float32Array, 1 << 12);
   const vstart = new Grow(Uint32Array, 1 << 10);
+  const wallStart = new Grow(Uint32Array, 1 << 10);
+  const ground = new Grow(Uint8Array, 1 << 10);
+  let relMin = Infinity;
+  let relMax = -Infinity;
   const lod = [0, 0, 0];
   let vertexCount = 0;
   let minX = Infinity;
@@ -475,8 +486,12 @@ function buildBuildings(layer, ctx, probe) {
     maxY = Math.max(maxY, by1);
     const sampleIndex = vstart.n;
     vstart.push(vertexCount);
+    ground.push(groundLevel ? 1 : 0);
     samples.push3(centroid.lx, centroid.ly, bx0);
     samples.push3(by0, bx1, by1);
+    const bottomY = groundLevel ? -FOUNDATION_M : poly.bottom;
+    relMin = Math.min(relMin, bottomY);
+    relMax = Math.max(relMax, poly.top);
 
     // Roof: one vertex per ring point, earcut triangles made counter-clockwise (facing up).
     const roofStart = vertexCount;
@@ -485,15 +500,14 @@ function buildBuildings(layer, ctx, probe) {
     const flat = [];
     for (const r of rings) {
       for (const q of r.pts) {
-        position.push3(q.lx, 0, -q.ly);
+        position.push3(q.lx, poly.top, -q.ly);
         normal.push3(0, 127, 0);
         color.push3(cRoof[0], cRoof[1], cRoof[2]);
-        rel.push(poly.top);
-        foot.push(0);
         flat.push(q);
       }
     }
     vertexCount += flat.length;
+    wallStart.push(vertexCount);
     const faces = ShapeUtils.triangulateShape(contour, holes);
     for (const [a, b, c] of faces) {
       const A = flat[a];
@@ -525,10 +539,10 @@ function buildBuildings(layer, ctx, probe) {
         const nx = (sgn * dy) / len;
         const ny = (-sgn * dx) / len;
         const v = vertexCount;
-        position.push3(a.lx, 0, -a.ly);
-        position.push3(b.lx, 0, -b.ly);
-        position.push3(b.lx, 0, -b.ly);
-        position.push3(a.lx, 0, -a.ly);
+        position.push3(a.lx, bottomY, -a.ly);
+        position.push3(b.lx, bottomY, -b.ly);
+        position.push3(b.lx, poly.top, -b.ly);
+        position.push3(a.lx, poly.top, -a.ly);
         const inx = Math.round(nx * 127);
         const inz = Math.round(-ny * 127);
         for (let k = 0; k < 4; k += 1) normal.push3(inx, 0, inz);
@@ -537,14 +551,6 @@ function buildBuildings(layer, ctx, probe) {
         color.push3(cb[0], cb[1], cb[2]);
         color.push3(cWall[0], cWall[1], cWall[2]);
         color.push3(cWall[0], cWall[1], cWall[2]);
-        rel.push(poly.bottom);
-        rel.push(poly.bottom);
-        rel.push(poly.top);
-        rel.push(poly.top);
-        foot.push(groundLevel ? 1 : 0);
-        foot.push(groundLevel ? 1 : 0);
-        foot.push(0);
-        foot.push(0);
         if (sgn > 0) {
           index.push3(v, v + 1, v + 2);
           index.push3(v, v + 2, v + 3);
@@ -559,6 +565,12 @@ function buildBuildings(layer, ctx, probe) {
   }
   vstart.push(vertexCount);
   if (!vertexCount) return { part: null, probes, hidden, features: 0 };
+  // Landmark probes also get the exact float32 tile-local roof coordinates that are uploaded.
+  for (const pr of probes) {
+    if (Number.isInteger(pr.roofStart)) {
+      pr.roofLocal = Array.from(position.a.subarray(pr.roofStart * 3, (pr.roofStart + pr.roofCount) * 3));
+    }
+  }
   return {
     part: {
       count: vstart.n - 1,
@@ -566,13 +578,13 @@ function buildBuildings(layer, ctx, probe) {
       position: position.done(),
       normal: normal.done(),
       color: color.done(),
-      rel: rel.done(),
-      foot: foot.done(),
-      index: index.done(),
+      index: indexArray(index, vertexCount),
       samples: samples.done(),
       vstart: vstart.done(),
+      wallStart: wallStart.done(),
+      ground: ground.done(),
       lod,
-      bounds: { minX, minY, maxX, maxY },
+      bounds: { minX, minY, maxX, maxY, relMin, relMax },
     },
     probes,
     hidden,
@@ -609,6 +621,7 @@ function buildRoads(layer, ctx) {
   const lod = [0, 0, 0];
   let vertexCount = 0;
   let segments = 0;
+  let relMax = 0;
   const stepPx = ROAD_STEP_M * pxPerM;
   for (const line of lines) {
     // Densify in tile pixels, then project every point exactly.
@@ -673,13 +686,15 @@ function buildRoads(layer, ctx) {
       const ny = tx;
       const cosHalf = Math.max(nx * -py + ny * px, 0.35);
       const off = hw / cosHalf;
-      position.push3(q.lx + nx * off, 0, -(q.ly + ny * off));
-      position.push3(q.lx - nx * off, 0, -(q.ly - ny * off));
+      position.push3(q.lx + nx * off, lift, -(q.ly + ny * off));
+      position.push3(q.lx - nx * off, lift, -(q.ly - ny * off));
       normal.push3(0, 127, 0);
       normal.push3(0, 127, 0);
       color.push3(cr, cg, cbl);
       color.push3(cr, cg, cbl);
-      samples.push3(q.lx, q.ly, lift);
+      samples.push(q.lx);
+      samples.push(q.ly);
+      relMax = Math.max(relMax, lift);
       vertexCount += 2;
     }
     for (let i = 0; i + 1 < pts.length; i += 1) {
@@ -695,15 +710,28 @@ function buildRoads(layer, ctx) {
     for (let c = line.style.lod; c < 3; c += 1) lod[c] = index.n;
   }
   if (!vertexCount) return null;
+  const sm = samples.done();
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (let i = 0; i < sm.length; i += 2) {
+    minX = Math.min(minX, sm[i]);
+    maxX = Math.max(maxX, sm[i]);
+    minY = Math.min(minY, sm[i + 1]);
+    maxY = Math.max(maxY, sm[i + 1]);
+  }
+  const pad = ROAD_STYLES.motorway.width;
   return {
-    count: samples.n / 3,
+    count: sm.length / 2,
     segments,
     position: position.done(),
     normal: normal.done(),
     color: color.done(),
-    index: index.done(),
-    samples: samples.done(),
+    index: indexArray(index, vertexCount),
+    samples: sm,
     lod,
+    bounds: { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad, relMin: 0, relMax },
   };
 }
 
@@ -764,7 +792,7 @@ export function transferables(result) {
 const workerFrame = createWorldFrame();
 let template = null; // { tileJson, promise }
 const recentTiles = new Map(); // key → bytes (for landmark probes)
-const FETCH_TIMEOUT_MS = 20000;
+const FETCH_TIMEOUT_MS = 45000;
 
 async function tileUrlTemplate(tileJson) {
   if (!template || template.tileJson !== tileJson) {
@@ -794,7 +822,9 @@ async function loadTile(tileJson, z, x, y) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const response = await fetch(url, { mode: 'cors', signal: controller.signal });
+    const response = await fetch(url, { mode: 'cors', signal: controller.signal }).catch((error) => {
+      throw controller.signal.aborted ? new Error(`timeout after ${FETCH_TIMEOUT_MS / 1000} s`) : error;
+    });
     // 204/404: no tile there (empty sea, outside coverage) — a definitive empty result.
     if (response.status === 204 || response.status === 404) return new Uint8Array(0);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);

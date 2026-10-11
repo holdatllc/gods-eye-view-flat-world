@@ -12,6 +12,7 @@ import { LiveOverlay } from './overlays/liveOverlay.js';
 import { VectorLines } from './overlays/vectorLines.js';
 import { IceEnvironment } from './ice/iceEnvironment.js';
 import { RouteLayer } from './nav/routeLayer.js';
+import { BuildingsLayer } from './buildings/buildingsLayer.js';
 import { createWorldFrame, DOMAIN_GPS, DOMAIN_ICE } from './projection/domains.js';
 import { allAttributions } from './sources/catalog.js';
 import { installStyles } from './ui/styles.js';
@@ -33,6 +34,8 @@ export function mountFlatWorld({ viewer, dataManager }) {
   view.addLayer(ice);
   const routes = new RouteLayer({ frame });
   view.addLayer(routes);
+  const buildings = new BuildingsLayer({ frame });
+  view.addLayer(buildings);
 
   const mode = new FlatWorldMode({
     viewer,
@@ -41,7 +44,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
     onChange: (active) => panel.setActive(active),
   });
 
-  const panel = createPanel({ view, mode, live, vectors, ice, routes, frame, attributions: allAttributions() });
+  const panel = createPanel({ view, mode, live, vectors, ice, routes, buildings, frame, attributions: allAttributions() });
 
   // Picking: click selects a live object to track; hover reports the domain under the cursor.
   const raycaster = new THREE.Raycaster();
@@ -82,6 +85,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
     vectors,
     ice,
     routes,
+    buildings,
     frame,
     panel,
     enter: () => mode.enter(),

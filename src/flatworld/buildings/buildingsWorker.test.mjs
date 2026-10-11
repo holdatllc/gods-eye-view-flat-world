@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PbfWriter } from 'pbf';
 import {
+  FOUNDATION_M,
   buildTile,
   buildingColours,
   clipLine,
@@ -133,12 +134,8 @@ const result = buildTile(bytes, { z: Z, x: TX, y: TY, frame, probe: (() => {
 const B = result.buildings;
 const R = result.roads;
 
-/** Emulate the main-thread placement on flat ground at 0 m with exaggeration 1. */
-function placed(part) {
-  const p = Float64Array.from(part.position);
-  for (let v = 0; v < p.length / 3; v += 1) p[v * 3 + 1] = part.foot[v] ? -2 : part.rel[v];
-  return p;
-}
+/** Drawn positions on flat ground at 0 m with exaggeration 1 (y = aGround + y · e). */
+const placed = (part) => Float64Array.from(part.position);
 
 function cross(p, a, b, c) {
   const ux = p[b * 3] - p[a * 3];
@@ -179,19 +176,32 @@ test('buildings: counts, hide_3d, foundations and float32 tile-local positions',
   assert.equal(result.stats.hidden3d, 1);
   assert.equal(B.count, 4);
   assert.equal(B.vstart.length, B.count + 1);
+  assert.equal(B.wallStart.length, B.count);
   assert.equal(B.vstart[B.count], B.position.length / 3);
   assert.equal(B.lod[2], B.index.length);
+  assert.ok(B.index instanceof Uint16Array, 'small tiles use 16-bit indices');
   assert.ok(B.lod[0] <= B.lod[1] && B.lod[1] <= B.lod[2]);
   for (const v of B.position) assert.ok(Number.isFinite(v));
-  for (const v of B.position) assert.ok(Math.abs(v) < 2500, 'tile-local coordinates stay small');
-  // The raised part (50–80 m) has no foundation vertices; ground-level buildings do.
-  const raised = [...Array(B.count).keys()].find((s) => B.rel[B.vstart[s]] === 80);
-  for (let v = B.vstart[raised]; v < B.vstart[raised + 1]; v += 1) {
-    assert.equal(B.foot[v], 0);
-    assert.ok(B.rel[v] === 50 || B.rel[v] === 80);
+  for (let i = 0; i < B.position.length; i += 3) {
+    assert.ok(Math.abs(B.position[i]) < 2500 && Math.abs(B.position[i + 2]) < 2500, 'tile-local coordinates stay small');
   }
-  assert.ok(B.foot.some((f) => f === 1));
-  assert.ok(transferables(result).length >= 10);
+  const y = (v) => B.position[v * 3 + 1];
+  for (let s = 0; s < B.count; s += 1) {
+    const top = y(B.vstart[s]);
+    // Roof vertices first (all at the top), then wall quads: two bottom vertices, two top.
+    for (let v = B.vstart[s]; v < B.wallStart[s]; v += 1) assert.equal(y(v), top);
+    for (let v = B.wallStart[s]; v < B.vstart[s + 1]; v += 4) {
+      const bottom = B.ground[s] ? -FOUNDATION_M : 50;
+      assert.deepEqual([y(v), y(v + 1), y(v + 2), y(v + 3)], [bottom, bottom, top, top]);
+    }
+  }
+  // The raised part (50–80 m) starts above ground; the others are ground-level with foundations.
+  const raised = [...Array(B.count).keys()].find((s) => y(B.vstart[s]) === 80);
+  assert.equal(B.ground[raised], 0);
+  assert.equal([...B.ground].filter(Boolean).length, 3);
+  assert.equal(B.bounds.relMin, -FOUNDATION_M);
+  assert.equal(B.bounds.relMax, 80);
+  assert.ok(transferables(result).length >= 12);
 });
 
 test('buildings: every triangle faces along its normal; walls point away from the building', () => {
@@ -219,9 +229,8 @@ test('buildings: every triangle faces along its normal; walls point away from th
         return (s1 >= 0 && s2 >= 0 && s3 >= 0) || (s1 <= 0 && s2 <= 0 && s3 <= 0);
       });
     let walls = 0;
-    for (let v = v0; v < v1; v += 4) {
-      if (B.normal[v * 3 + 1] !== 0) continue; // roof vertex
-      if (B.normal[(v + 1) * 3 + 1] !== 0) continue;
+    for (let v = B.wallStart[s]; v < v1; v += 4) {
+      assert.equal(B.normal[v * 3 + 1], 0, 'wall quads are vertical');
       walls += 1;
       const mx = (p[v * 3] + p[(v + 1) * 3]) / 2;
       const mz = (p[v * 3 + 2] + p[(v + 1) * 3 + 2]) / 2;
@@ -271,6 +280,7 @@ test('every rendered roof vertex inverts to its source lat/lon within 1e-9°', (
   const hidden = result.probes.find((q) => q.hidden);
   assert.ok(probe && hidden, 'probe finds the visible footprint and the hide_3d outline');
   assert.equal(probe.roofCount, 4);
+  assert.deepEqual(probe.roofLocal, Array.from(B.position.subarray(probe.roofStart * 3, (probe.roofStart + 4) * 3)));
   let worst = 0;
   for (let i = 0; i < probe.roofCount; i += 1) {
     const v = probe.roofStart + i;
@@ -293,7 +303,7 @@ test('every rendered roof vertex inverts to its source lat/lon within 1e-9°', (
 
 test('roads: tunnels and ferries skipped, ribbon clipped to the tile, faces up, true width', () => {
   assert.ok(R && R.segments > 0);
-  const p = placed({ ...R, rel: new Float32Array(R.position.length / 3), foot: new Uint8Array(R.position.length / 3) });
+  const p = placed(R);
   for (let i = 0; i < R.index.length; i += 3) {
     const n = cross(p, R.index[i], R.index[i + 1], R.index[i + 2]);
     assert.ok(n[1] > 0, 'road triangle faces up');

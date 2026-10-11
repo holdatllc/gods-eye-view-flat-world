@@ -32,7 +32,7 @@ export function fmtLatLon(lat, lon) {
   return `${Math.abs(lat).toFixed(5)}°${ns} ${Math.abs(lon).toFixed(5)}°${ew}`;
 }
 
-export function createPanel({ view, mode, live, vectors, ice, routes, frame, attributions }) {
+export function createPanel({ view, mode, live, vectors, ice, routes, buildings, frame, attributions }) {
   const toggle = el(
     'button',
     { class: 'fw-toggle', type: 'button', title: 'Switch between the globe and the flat world', onclick: () => mode.toggle() },
@@ -124,10 +124,15 @@ export function createPanel({ view, mode, live, vectors, ice, routes, frame, att
     vectors.showGrid = !vectors.showGrid;
     gridBtn.classList.toggle('on', vectors.showGrid);
   });
+  const buildingsBtn = el('button', { class: 'fw-btn on', type: 'button' }, '3D BUILDINGS');
+  buildingsBtn.addEventListener('click', () => {
+    buildings.enabled = !buildings.enabled;
+    buildingsBtn.classList.toggle('on', buildings.enabled);
+  });
   cam.append(
     el('div', { class: 'fw-kv' }, el('b', {}, 'Relief'), exLabel),
     exSlider,
-    el('div', { class: 'fw-row' }, drainBtn, distBtn, domainBtn, coastBtn, gridBtn),
+    el('div', { class: 'fw-row' }, drainBtn, distBtn, domainBtn, coastBtn, gridBtn, buildingsBtn),
   );
 
   // ---- Sun and time ----------------------------------------------------------------------

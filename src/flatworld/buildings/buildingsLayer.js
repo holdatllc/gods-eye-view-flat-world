@@ -13,8 +13,10 @@
  * Ground: each building stands on the rendered terrain (view.chunks.heightAt at the footprint
  * centroid, which includes the relief exaggeration); building heights are scaled by the same
  * exaggeration so they stay proportional, and walls reach below the lowest ground under the
- * footprint. Roads are draped per centreline sample. When finer terrain loads under a tile, or the
- * exaggeration changes, the tile is re-based within a per-frame time budget.
+ * footprint. Roads are draped per centreline sample. The vertex shader draws
+ * y = aGround + y · exaggeration, so the CPU keeps only the per-vertex ground (`aGround`, 4 bytes)
+ * and frees every other vertex array once it is on the GPU. When finer terrain loads under a tile,
+ * or the exaggeration changes, the tile's ground is re-sampled within a per-frame time budget.
  *
  * Data: © OpenStreetMap contributors (ODbL) via OpenFreeMap / OpenMapTiles.
  */
@@ -25,8 +27,26 @@ import { DOMAIN_GPS } from '../projection/domains.js';
 export const BUILDINGS_ZOOM = 14;
 const DEG = Math.PI / 180;
 const MERCATOR_MAX_LAT = 85.0511287798066;
-/** Foundations reach this far (metres, before exaggeration) below the lowest sampled ground. */
-const FOUNDATION_M = 2;
+
+/**
+ * Make a material draw y = aGround + y · uExaggeration (shared uniform). Applied to the colour
+ * materials and to the shadow depth material so shadows match the drawn geometry.
+ */
+function grounded(material, uniforms) {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uExaggeration = uniforms.uExaggeration;
+    shader.vertexShader = `attribute float aGround;\nuniform float uExaggeration;\n${shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      '#include <begin_vertex>\n  transformed.y = aGround + transformed.y * uExaggeration;',
+    )}`;
+  };
+  material.customProgramCacheKey = () => 'flatworld-grounded';
+  return material;
+}
+
+function releaseArray() {
+  this.array = null;
+}
 
 /** Web-Mercator tile containing lon/lat. */
 export function lonLatToTile(lon, lat, z = BUILDINGS_ZOOM) {
@@ -95,7 +115,7 @@ export class BuildingsLayer {
    * @param {number} [options.maxTiles=120] LRU cache bound (tiles with geometry or known empty)
    * @param {number} [options.maxActiveTiles=64] tiles wanted at once around the focus
    * @param {number} [options.maxAltitude=25000] display metres above ground; higher → hidden
-   * @param {number} [options.maxCacheMB=420] GPU memory bound for the cache (estimate)
+   * @param {number} [options.maxCacheMB=256] GPU memory bound for the cache (estimate)
    */
   constructor({
     frame,
@@ -103,7 +123,7 @@ export class BuildingsLayer {
     maxTiles = 120,
     maxActiveTiles = 64,
     maxAltitude = 25000,
-    maxCacheMB = 420,
+    maxCacheMB = 256,
     workerCount = 2,
   } = {}) {
     this.frame = frame;
@@ -119,8 +139,16 @@ export class BuildingsLayer {
     this.rebaseBudgetMs = 4;
     this.group = new THREE.Group();
     this.group.name = 'flatworld-buildings';
-    this.buildingMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0 });
-    this.roadMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
+    this.uniforms = { uExaggeration: { value: 1 } };
+    this.buildingMaterial = grounded(
+      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0 }),
+      this.uniforms,
+    );
+    this.roadMaterial = grounded(
+      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }),
+      this.uniforms,
+    );
+    this.depthMaterial = grounded(new THREE.MeshDepthMaterial(), this.uniforms);
     this.tiles = new Map(); // key → tile record
     this.boundsCache = new Map(); // key → display bbox of the tile
     this.workers = [];
@@ -132,6 +160,8 @@ export class BuildingsLayer {
     this._enabled = true;
     this._rotation = frame.displayRotationDeg;
     this._sigCursor = 0;
+    this._chunkIds = new WeakMap(); // terrain chunk → small id (signatures)
+    this._nextChunkId = 1;
     this.totals = { requested: 0, built: 0, failed: 0, evicted: 0, bytes: 0, decodeMs: 0, rebases: 0, rebaseMs: 0 };
   }
 
@@ -178,7 +208,7 @@ export class BuildingsLayer {
     if (msg.type === 'failed') {
       this.totals.failed += 1;
       rec.state = 'failed';
-      rec.retryAt = performance.now() + 15000;
+      rec.retryAt = performance.now() + 6000;
       console.warn('[FlatWorld] buildings tile failed', job.key, msg.error);
       return;
     }
@@ -296,28 +326,31 @@ export class BuildingsLayer {
 
   _createPart(part, material, origin, { cast }) {
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(part.position, 3));
-    const normal = new THREE.BufferAttribute(part.normal, 3, true);
-    const color = new THREE.BufferAttribute(part.color, 3, true);
+    const vertexCount = part.position.length / 3;
+    const groundY = new THREE.BufferAttribute(new Float32Array(vertexCount), 1);
+    groundY.setUsage(THREE.DynamicDrawUsage);
+    const attrs = {
+      position: new THREE.BufferAttribute(part.position, 3),
+      normal: new THREE.BufferAttribute(part.normal, 3, true),
+      color: new THREE.BufferAttribute(part.color, 3, true),
+    };
     const index = new THREE.BufferAttribute(part.index, 1);
-    // Normals, colours and indices are never touched again: free their CPU copies once uploaded.
-    for (const attr of [normal, color, index]) {
-      attr.onUpload(function release() {
-        this.array = null;
-      });
-    }
-    g.setAttribute('normal', normal);
-    g.setAttribute('color', color);
+    // Only aGround changes after upload: free the CPU copies of everything else once on the GPU.
+    for (const attr of [...Object.values(attrs), index]) attr.onUpload(releaseArray);
+    for (const [name, attr] of Object.entries(attrs)) g.setAttribute(name, attr);
+    g.setAttribute('aGround', groundY);
     g.setIndex(index);
     const mesh = new THREE.Mesh(g, material);
     mesh.position.set(origin.x, 0, -origin.y);
     mesh.castShadow = cast;
     mesh.receiveShadow = true;
+    if (cast) mesh.customDepthMaterial = this.depthMaterial;
     mesh.matrixAutoUpdate = false;
     mesh.updateMatrix();
     mesh.visible = false;
-    const gpuBytes = part.position.byteLength + part.normal.byteLength + part.color.byteLength + part.index.byteLength;
-    return { mesh, gpuBytes, indexCount: part.index.length };
+    const gpuBytes =
+      part.position.byteLength + part.normal.byteLength + part.color.byteLength + part.index.byteLength + vertexCount * 4;
+    return { mesh, ground: groundY, gpuBytes, indexCount: part.index.length };
   }
 
   _install({ rec, result }) {
@@ -333,62 +366,92 @@ export class BuildingsLayer {
     const r = result.roads;
     if (b) {
       const p = this._createPart(b, this.buildingMaterial, rec.origin, { cast: true });
-      rec.b = { ...p, rel: b.rel, foot: b.foot, samples: b.samples, vstart: b.vstart, lod: b.lod, count: b.count, bounds: b.bounds };
+      rec.b = { ...p, samples: b.samples, vstart: b.vstart, wallStart: b.wallStart, groundLevel: b.ground, lod: b.lod, count: b.count, bounds: b.bounds };
       rec.gpuBytes += p.gpuBytes;
-      rec.cpuBytes += b.position.byteLength + b.rel.byteLength + b.foot.byteLength + b.samples.byteLength + b.vstart.byteLength;
+      rec.cpuBytes += p.ground.array.byteLength + b.samples.byteLength + b.vstart.byteLength + b.wallStart.byteLength + b.ground.byteLength;
       this.group.add(p.mesh);
     }
     if (r) {
       const p = this._createPart(r, this.roadMaterial, rec.origin, { cast: false });
-      let minX = Infinity;
-      let minY = Infinity;
-      let maxX = -Infinity;
-      let maxY = -Infinity;
-      for (let i = 0; i < r.samples.length; i += 3) {
-        minX = Math.min(minX, r.samples[i]);
-        maxX = Math.max(maxX, r.samples[i]);
-        minY = Math.min(minY, r.samples[i + 1]);
-        maxY = Math.max(maxY, r.samples[i + 1]);
-      }
-      rec.r = { ...p, samples: r.samples, lod: r.lod, segments: r.segments, bounds: { minX: minX - 10, minY: minY - 10, maxX: maxX + 10, maxY: maxY + 10 } };
+      rec.r = { ...p, samples: r.samples, lod: r.lod, segments: r.segments, bounds: r.bounds };
       rec.gpuBytes += p.gpuBytes;
-      rec.cpuBytes += r.position.byteLength + r.samples.byteLength;
+      rec.cpuBytes += p.ground.array.byteLength + r.samples.byteLength;
       this.group.add(p.mesh);
     }
     if (!b && !r) rec.state = 'empty';
+    rec.sampleBounds = this._sampleBounds(rec);
     rec.based = false;
     rec.signature = null;
   }
 
-  /** Terrain signature under a tile: the finest loaded terrain level at a 3×3 grid + relief. */
-  _signature(rec, chunks) {
-    const b = this._tileBounds(rec.z, rec.x, rec.y);
-    let s = `${chunks.exaggeration}|${chunks.drain}`;
-    for (const fy of [0.1, 0.5, 0.9]) {
-      for (const fx of [0.1, 0.5, 0.9]) {
-        s += `|${chunks.levelAt(b.minX + (b.maxX - b.minX) * fx, b.minY + (b.maxY - b.minY) * fy)}`;
+  /** Display bbox of every ground sample of a tile (building centroids can lie past its edge). */
+  _sampleBounds(rec) {
+    const t = this._tileBounds(rec.z, rec.x, rec.y);
+    const out = { ...t };
+    const grow = (x, y) => {
+      if (x < out.minX) out.minX = x;
+      if (x > out.maxX) out.maxX = x;
+      if (y < out.minY) out.minY = y;
+      if (y > out.maxY) out.maxY = y;
+    };
+    const { x: ox, y: oy } = rec.origin;
+    if (rec.b) {
+      const sm = rec.b.samples;
+      for (let i = 0; i < sm.length; i += 6) {
+        grow(ox + sm[i], oy + sm[i + 1]);
+        grow(ox + sm[i + 2], oy + sm[i + 3]);
+        grow(ox + sm[i + 4], oy + sm[i + 5]);
       }
     }
-    return s;
+    return out;
   }
 
-  /** Place a tile's buildings and roads on the currently rendered terrain. */
+  /**
+   * Terrain signature under a tile: the identities of every loaded terrain chunk overlapping it,
+   * plus relief exaggeration and ocean drain. Any chunk that loads, is evicted or is rebuilt changes
+   * it, which triggers a re-base.
+   */
+  _signature(rec, chunks) {
+    const b = rec.sampleBounds ?? this._tileBounds(rec.z, rec.x, rec.y);
+    let s = `${chunks.exaggeration}|${chunks.drain}`;
+    if (!(chunks.chunks instanceof Map)) {
+      for (const fy of [0.1, 0.5, 0.9]) {
+        for (const fx of [0.1, 0.5, 0.9]) {
+          s += `|${chunks.levelAt(b.minX + (b.maxX - b.minX) * fx, b.minY + (b.maxY - b.minY) * fy)}`;
+        }
+      }
+      return s;
+    }
+    let n = 0;
+    let h = 0;
+    for (const c of chunks.chunks.values()) {
+      const size = c.data?.size;
+      if (!(size > 0) || c.x0 > b.maxX || c.x0 + size <= b.minX || c.y0 > b.maxY || c.y0 + size <= b.minY) continue;
+      let id = this._chunkIds.get(c);
+      if (!id) {
+        id = this._nextChunkId++;
+        this._chunkIds.set(c, id);
+      }
+      n += 1;
+      h = (Math.imul(h, 31) + id) | 0;
+    }
+    return `${s}|${n}|${h}`;
+  }
+
+  /** Place a tile's buildings and roads on the currently rendered terrain (fills aGround). */
   _rebase(rec, view) {
     const t0 = performance.now();
     const chunks = view.chunks;
-    const e = chunks.exaggeration;
     const fallback = view.focus?.ground ?? 0;
     const ox = rec.origin.x;
     const oy = rec.origin.y;
-    const heightAt = makeHeightSampler(chunks, this._tileBounds(rec.z, rec.x, rec.y));
-    let minY = Infinity;
-    let maxY = -Infinity;
+    const heightAt = makeHeightSampler(chunks, rec.sampleBounds ?? this._tileBounds(rec.z, rec.x, rec.y));
     if (rec.b) {
-      const { samples, vstart, rel, foot } = rec.b;
-      const attr = rec.b.mesh.geometry.attributes.position;
-      const pos = attr.array;
-      const n = vstart.length - 1;
-      for (let s = 0; s < n; s += 1) {
+      const { samples, vstart, wallStart, groundLevel } = rec.b;
+      const g = rec.b.ground.array;
+      let gMin = Infinity;
+      let gMax = -Infinity;
+      for (let s = 0, n = vstart.length - 1; s < n; s += 1) {
         const o6 = s * 6;
         const base = heightAt(ox + samples[o6], oy + samples[o6 + 1]) ?? fallback;
         let low = base;
@@ -397,7 +460,7 @@ export class BuildingsLayer {
         const x1 = samples[o6 + 4];
         const y1 = samples[o6 + 5];
         // Larger footprints also sample their bbox corners so foundations reach the lowest ground.
-        if (x1 - x0 + (y1 - y0) > 24) {
+        if (groundLevel[s] && x1 - x0 + (y1 - y0) > 24) {
           for (const [cx, cy] of [
             [x0, y0],
             [x1, y0],
@@ -408,47 +471,59 @@ export class BuildingsLayer {
             if (h !== null && h < low) low = h;
           }
         }
-        const footY = low - FOUNDATION_M * e;
-        for (let v = vstart[s], end = vstart[s + 1]; v < end; v += 1) {
-          const y = foot[v] ? footY : base + rel[v] * e;
-          pos[v * 3 + 1] = y;
-          if (y < minY) minY = y;
-          if (y > maxY) maxY = y;
-        }
+        const w0 = wallStart[s];
+        const end = vstart[s + 1];
+        g.fill(base, vstart[s], end);
+        // Ground-level walls: the two bottom vertices of every quad stand on the lowest ground.
+        if (groundLevel[s] && low < base) for (let v = w0; v < end; v += 4) g[v] = g[v + 1] = low;
+        if (low < gMin) gMin = low;
+        if (base > gMax) gMax = base;
       }
-      attr.needsUpdate = true;
-      this._setBounds(rec.b.mesh.geometry, rec.b.bounds, minY, maxY);
+      rec.b.ground.needsUpdate = true;
+      rec.b.gMin = gMin;
+      rec.b.gMax = gMax;
     }
     if (rec.r) {
       const { samples } = rec.r;
-      const attr = rec.r.mesh.geometry.attributes.position;
-      const pos = attr.array;
-      let rMin = Infinity;
-      let rMax = -Infinity;
-      for (let s = 0, n = samples.length / 3; s < n; s += 1) {
-        const base = heightAt(ox + samples[s * 3], oy + samples[s * 3 + 1]) ?? fallback;
-        const y = base + samples[s * 3 + 2] * e;
-        pos[s * 6 + 1] = y;
-        pos[s * 6 + 4] = y;
-        if (y < rMin) rMin = y;
-        if (y > rMax) rMax = y;
+      const g = rec.r.ground.array;
+      let gMin = Infinity;
+      let gMax = -Infinity;
+      for (let s = 0, n = samples.length / 2; s < n; s += 1) {
+        const base = heightAt(ox + samples[s * 2], oy + samples[s * 2 + 1]) ?? fallback;
+        g[s * 2] = base;
+        g[s * 2 + 1] = base;
+        if (base < gMin) gMin = base;
+        if (base > gMax) gMax = base;
       }
-      attr.needsUpdate = true;
-      this._setBounds(rec.r.mesh.geometry, rec.r.bounds, rMin, rMax + 10 * Math.max(e, 1));
-      minY = Math.min(minY, rMin);
-      maxY = Math.max(maxY, rMax);
+      rec.r.ground.needsUpdate = true;
+      rec.r.gMin = gMin;
+      rec.r.gMax = gMax;
     }
-    rec.minY = Number.isFinite(minY) ? minY : undefined;
-    rec.maxY = Number.isFinite(maxY) ? maxY : undefined;
+    this._updateBounds(rec, chunks.exaggeration);
     rec.based = true;
     rec.basedAt = performance.now();
     this.totals.rebases += 1;
     this.totals.rebaseMs += performance.now() - t0;
   }
 
-  _setBounds(geometry, b, minY, maxY) {
-    geometry.boundingBox = new THREE.Box3(new THREE.Vector3(b.minX, minY, -b.maxY), new THREE.Vector3(b.maxX, maxY, -b.minY));
-    geometry.boundingSphere = geometry.boundingBox.getBoundingSphere(new THREE.Sphere());
+  /** Bounding volumes for culling: ground range plus the exaggerated height range. */
+  _updateBounds(rec, e) {
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const part of [rec.b, rec.r]) {
+      if (!part || !Number.isFinite(part.gMin)) continue;
+      const b = part.bounds;
+      const lo = part.gMin + Math.min(b.relMin, 0) * e;
+      const hi = part.gMax + b.relMax * e + (part === rec.r ? 10 * Math.max(e, 1) : 0);
+      const geometry = part.mesh.geometry;
+      geometry.boundingBox = new THREE.Box3(new THREE.Vector3(b.minX, lo, -b.maxY), new THREE.Vector3(b.maxX, hi, -b.minY));
+      geometry.boundingSphere = geometry.boundingBox.getBoundingSphere(new THREE.Sphere());
+      minY = Math.min(minY, lo);
+      maxY = Math.max(maxY, hi);
+    }
+    rec.boundsE = e;
+    rec.minY = Number.isFinite(minY) ? minY : undefined;
+    rec.maxY = Number.isFinite(maxY) ? maxY : undefined;
   }
 
   _disposeTile(rec) {
@@ -541,9 +616,9 @@ export class BuildingsLayer {
     }
     this._sigCursor = (this._sigCursor + 8) % Math.max(ready.length, 1);
     // Terrain refines in bursts: re-base once the signature has been stable for a moment (or at
-    // least every few seconds while it keeps changing).
+    // least every 1.5 s while it keeps changing).
     const todo = ready
-      .filter((r) => !r.based || (r.dirty && (now - r.sigAt > 700 || now - r.basedAt > 4000)))
+      .filter((r) => !r.based || (r.dirty && (now - r.sigAt > 300 || now - r.basedAt > 1500)))
       .sort((a, b) => a.based - b.based || a.dist - b.dist);
     const t1 = performance.now();
     for (const rec of todo) {
@@ -555,8 +630,10 @@ export class BuildingsLayer {
 
     // 3. Visibility and level of detail.
     const e = chunks.exaggeration;
+    this.uniforms.uExaggeration.value = e;
     for (const rec of this.tiles.values()) {
       const show = wanted.has(rec.key) && rec.based;
+      if (show && rec.boundsE !== e) this._updateBounds(rec, e);
       if (rec.b) {
         rec.b.mesh.visible = show;
         if (show) {
@@ -604,6 +681,13 @@ export class BuildingsLayer {
       else pending += 1;
       gpu += rec.gpuBytes || 0;
       cpu += rec.cpuBytes || 0;
+      // Vertex arrays are released on first upload; count the ones still waiting to be drawn.
+      for (const part of [rec.b, rec.r]) {
+        if (!part) continue;
+        const g = part.mesh.geometry;
+        for (const name of ['position', 'normal', 'color']) cpu += g.attributes[name].array?.byteLength ?? 0;
+        cpu += g.index.array?.byteLength ?? 0;
+      }
       const shown = rec.b?.mesh.visible || rec.r?.mesh.visible;
       if (rec.b) {
         buildingsLoaded += rec.b.count;
@@ -650,10 +734,52 @@ export class BuildingsLayer {
   }
 
   /**
+   * Check that every visible building and road stands on the terrain: compare each sample's ground
+   * value (what the shader draws from) with view.chunks.heightAt at the same point. Tiles waiting
+   * for a debounced re-base (their terrain changed within the last ~1.5 s) are counted separately.
+   */
+  verifyGround() {
+    const chunks = this.view.chunks;
+    const out = { tiles: 0, staleTiles: 0, buildingSamples: 0, roadSamples: 0, maxBuildingErrM: 0, maxRoadErrM: 0 };
+    for (const rec of this.tiles.values()) {
+      if (rec.state !== 'ready' || !rec.based || !(rec.b?.mesh.visible || rec.r?.mesh.visible)) continue;
+      if (rec.dirty || this._signature(rec, chunks) !== rec.signature) {
+        out.staleTiles += 1; // terrain under it changed; a re-base is scheduled
+        continue;
+      }
+      out.tiles += 1;
+      const { x: ox, y: oy } = rec.origin;
+      if (rec.b) {
+        const { samples, vstart } = rec.b;
+        const g = rec.b.ground.array;
+        for (let s = 0; s < vstart.length - 1; s += 1) {
+          const h = chunks.heightAt(ox + samples[s * 6], oy + samples[s * 6 + 1]);
+          if (h === null) continue;
+          out.buildingSamples += 1;
+          out.maxBuildingErrM = Math.max(out.maxBuildingErrM, Math.abs(g[vstart[s]] - h));
+        }
+      }
+      if (rec.r) {
+        const { samples } = rec.r;
+        const g = rec.r.ground.array;
+        for (let s = 0; s < samples.length / 2; s += 1) {
+          const h = chunks.heightAt(ox + samples[s * 2], oy + samples[s * 2 + 1]);
+          if (h === null) continue;
+          out.roadSamples += 1;
+          out.maxRoadErrM = Math.max(out.maxRoadErrM, Math.abs(g[s * 2] - h));
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
    * Prove a landmark sits where its source coordinates say: decode the footprint(s) containing
    * (lat, lon) from the z14 tile, round-trip the footprint centroid through the projection and
-   * frame.worldToDomain, and check every rendered roof vertex in the GPU buffer (float32, tile
-   * local + float64 origin) inverts back to its source lat/lon.
+   * frame.worldToDomain, and check every roof vertex as uploaded (float32 tile-local coordinates
+   * from the same deterministic build, plus the float64 tile origin) inverts back to its source
+   * lat/lon. For the loaded tile it also reports the live ground under the footprint and the drawn
+   * roof height above the terrain.
    */
   async verifyLandmark({ lat, lon, name = 'landmark' }) {
     this._ensureWorkers();
@@ -690,34 +816,34 @@ export class BuildingsLayer {
         },
         centroidToReferenceM: Math.hypot((p.centroid.lat - lat) * mLat, (p.centroid.lon - lon) * mLon),
       };
-      if (!p.hidden && rec?.b && Number.isInteger(p.roofStart)) {
-        const pos = rec.b.mesh.geometry.attributes.position.array;
+      if (!p.hidden && Number.isInteger(p.roofStart)) {
+        // The float32 tile-local roof coordinates exactly as uploaded (the build is deterministic;
+        // the live tile's origin must match), plus the float64 tile origin.
         let maxLat = 0;
         let maxLon = 0;
-        let sx = 0;
-        let sy = 0;
-        let roofY = 0;
         for (let i = 0; i < p.roofCount; i += 1) {
-          const v = p.roofStart + i;
-          const x = rec.origin.x + pos[v * 3];
-          const y = rec.origin.y - pos[v * 3 + 2];
-          sx += x;
-          sy += y;
-          roofY += pos[v * 3 + 1];
+          const x = msg.origin.x + p.roofLocal[i * 3];
+          const y = msg.origin.y - p.roofLocal[i * 3 + 2];
           const d = this.frame.worldToDomain(x, y, 0);
           maxLat = Math.max(maxLat, Math.abs(d.lat - p.roofLatLon[i][0]));
           maxLon = Math.max(maxLon, Math.abs(d.lon - p.roofLatLon[i][1]));
         }
-        const s = rec.b.samples;
-        const base = this.view?.chunks.heightAt(rec.origin.x + s[p.sampleIndex * 6], rec.origin.y + s[p.sampleIndex * 6 + 1]);
-        r.gpuBuffer = {
-          roofVertices: p.roofCount,
-          maxVertexLatErrDeg: maxLat,
-          maxVertexLonErrDeg: maxLon,
-          roofCentroidDisplay: { x: sx / p.roofCount, y: sy / p.roofCount },
-          roofCentroidToProjectedCentroidM: Math.hypot(sx / p.roofCount - w.x, sy / p.roofCount - w.y),
-          roofAboveGroundM: base == null ? null : (roofY / p.roofCount - base) / e,
-        };
+        r.vertexBuffer = { roofVertices: p.roofCount, maxVertexLatErrDeg: maxLat, maxVertexLonErrDeg: maxLon };
+        if (rec?.b && rec.origin.x === msg.origin.x && rec.origin.y === msg.origin.y) {
+          // Live placement: the roof's ground equals the terrain under the footprint centroid, and
+          // the drawn roof is render_height (× exaggeration) above it.
+          const s = rec.b.samples;
+          const terrain = this.view?.chunks.heightAt(rec.origin.x + s[p.sampleIndex * 6], rec.origin.y + s[p.sampleIndex * 6 + 1]);
+          const groundY = rec.b.ground.array[p.roofStart];
+          r.livePlacement = {
+            groundY,
+            terrainAtCentroid: terrain,
+            groundErrM: terrain == null ? null : Math.abs(groundY - terrain),
+            drawnRoofY: groundY + p.roofLocal[1] * e,
+            roofAboveTerrainM: terrain == null ? null : (groundY + p.roofLocal[1] * e - terrain) / e,
+            exaggeration: e,
+          };
+        }
       }
       out.footprints.push(r);
     }
@@ -731,5 +857,6 @@ export class BuildingsLayer {
     this.group.removeFromParent();
     this.buildingMaterial.dispose();
     this.roadMaterial.dispose();
+    this.depthMaterial.dispose();
   }
 }
