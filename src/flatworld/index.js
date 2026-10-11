@@ -16,6 +16,7 @@ import { VectorLines } from './overlays/vectorLines.js';
 import { IceEnvironment } from './ice/iceEnvironment.js';
 import { RouteLayer } from './nav/routeLayer.js';
 import { BuildingsLayer } from './buildings/buildingsLayer.js';
+import { SkyBodies } from './sky/skyBodies.js';
 import {
   createWorldFrame,
   DOMAIN_GPS,
@@ -79,6 +80,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
     view.addLayer(routes);
     const buildings = new BuildingsLayer({ frame });
     view.addLayer(buildings);
+    view.addLayer(new SkyBodies({ frame }));
 
     // Always-visible attribution for the data on screen (the globe's credit bar is hidden).
     const credits = document.createElement('div');
