@@ -221,7 +221,7 @@ void main() {
 `;
 
 const LABEL_CSS = `
-.fw-wall-label { position: absolute; left: 50%; transform: translateX(-50%); bottom: 54px; z-index: 2;
+.fw-wall-label { position: absolute; left: 50%; transform: translateX(-50%); top: 150px; z-index: 2;
   max-width: min(640px, calc(100vw - 340px)); text-align: center; pointer-events: none;
   font: 10px/1.35 ui-monospace, 'SF Mono', Menlo, monospace; color: #bfe9f5; background: rgba(4, 14, 20, 0.62);
   padding: 3px 9px; border-radius: 4px; }
