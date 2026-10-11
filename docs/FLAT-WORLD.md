@@ -111,6 +111,24 @@ inverts to its exact WGS84 position. The ice field rises from the real ETOPO 202
 90° S (2,832 m) over 250 km and shares the South Pole's real sky by default, so the circle is
 invisible when crossed.
 
+## Ice wall (hypothetical)
+
+`src/flatworld/wall/` draws a continuous ice wall on the outer circle of the mapped world
+(`frame.boundaryRadius`, about 20,004 km from the North Pole). It is a model feature, not data:
+it has no GPS coordinates, and Antarctica's real coast and shelf fronts stay at their true
+projected positions.
+
+- Height: baseline 50 m, deterministic variation 20 to 85 m along the rim, hard cap 100 m, and
+  low inlets that ramp almost to sea level. The foot sits on the 2,832 m plateau surface.
+- Look: cream face with strata, vertical cracks and sea caves in sapphire blue, a snow cornice,
+  and a low mist skirt at the base.
+- Visibility: beyond 2 km from the wall the height is exaggerated with camera distance
+  (E = 1 + (d - 2 km) / 2 km, capped at 12,000), and an on-screen label states the factor and the
+  true height. Closer than 2 km it is true scale.
+- Sources behind the height choice are listed in `WALL_SOURCES` (`wallModel.js`): Ross 1841,
+  the modern Ross Ice Shelf front, iceberg freeboard, Shackleton, Scott, and the physical limit.
+- Unit tests: `node --test src/flatworld/wall/wallModel.test.mjs`.
+
 ## Verification
 
 - `npm test` includes the flat-world unit tests (projection, domains, chunk builder, routes).

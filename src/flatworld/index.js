@@ -17,6 +17,7 @@ import { IceEnvironment } from './ice/iceEnvironment.js';
 import { RouteLayer } from './nav/routeLayer.js';
 import { BuildingsLayer } from './buildings/buildingsLayer.js';
 import { SkyBodies } from './sky/skyBodies.js';
+import { WallLayer } from './wall/wallLayer.js';
 import {
   createWorldFrame,
   DOMAIN_GPS,
@@ -81,6 +82,8 @@ export function mountFlatWorld({ viewer, dataManager }) {
     const buildings = new BuildingsLayer({ frame });
     view.addLayer(buildings);
     view.addLayer(new SkyBodies({ frame }));
+    const wall = new WallLayer({ frame });
+    view.addLayer(wall);
 
     // Always-visible attribution for the data on screen (the globe's credit bar is hidden).
     const credits = document.createElement('div');
@@ -191,6 +194,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
       ice,
       routes,
       buildings,
+      wall,
       frame,
       panel,
     };
