@@ -21,6 +21,8 @@ mkdirSync(outDir, { recursive: true });
 
 const browser = await puppeteer.launch({
   headless: spec.headless ?? 'new',
+  // Long scripted runs (endurance tests) evaluate for many minutes in one call.
+  protocolTimeout: spec.protocolTimeout || 180000,
   args: [
     '--use-angle=metal',
     '--enable-gpu',
