@@ -254,6 +254,17 @@ export class ChunkManager {
     for (const c of this.chunks.values()) this._applyHeights(c);
   }
 
+  /** Drop every chunk deeper than `maxLevel` and all queued work (used when the view is hidden). */
+  trim(maxLevel = 6) {
+    for (const [key, c] of this.chunks) {
+      if (c.level > maxLevel) {
+        this._dispose(c);
+        this.chunks.delete(key);
+      }
+    }
+    this.pending.clear();
+  }
+
   _dispose(chunk) {
     this.group.remove(chunk.mesh);
     chunk.mesh.geometry.dispose();

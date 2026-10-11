@@ -8,9 +8,10 @@ import * as Cesium from 'cesium';
 import { DOMAIN_GPS } from '../projection/domains.js';
 
 export class FlatWorldMode {
-  constructor({ viewer, view, onChange = () => {} }) {
+  constructor({ viewer, view, live = null, onChange = () => {} }) {
     this.viewer = viewer;
     this.view = view;
+    this.live = live;
     this.onChange = onChange;
     this.active = false;
     this.savedGlobe = null;
@@ -64,13 +65,18 @@ export class FlatWorldMode {
 
   enter() {
     if (this.active) return;
+    // A globe camera flight in progress must not resume underneath us (review D2), and tracking
+    // from an earlier flat-world session must not pull the camera away (review D1).
+    this.viewer.camera.cancelFlight?.();
+    this.live?.stopTracking();
     const globe = this.readGlobe();
     this.savedGlobe = globe.saved;
     const pitch = Math.min(globe.focus.pitchDeg, -5);
     // Large ranges start from the whole-disc overview so the layout is immediately readable.
     const range = Math.min(globe.focus.range, 5.4e7);
     this.view.lookAtGeodetic({ ...globe.focus, range, pitchDeg: pitch });
-    this.entryFocus = { lat: globe.focus.lat, lon: globe.focus.lon, range };
+    const c0 = this.view.controls;
+    this.entryFocus = { lat: globe.focus.lat, lon: globe.focus.lon, range, yaw: c0.yaw, pitch: c0.pitch, mode: c0.mode };
     this.viewer.useDefaultRenderLoop = false;
     this.viewer.container.style.visibility = 'hidden';
     document.body.classList.add('flatworld-active');
@@ -99,18 +105,39 @@ export class FlatWorldMode {
   exit() {
     if (!this.active) return;
     clearInterval(this.syncTimer);
+    this.live?.stopTracking();
+    this.viewer.camera.cancelFlight?.();
     const f = this.view.getFocus();
     const camera = this.viewer.camera;
+    const c = this.view.controls;
     let synced = false;
-    if (f.domain.domain === DOMAIN_GPS && this.entryFocus) {
+    const eye = this.view.camera.position;
+    const eyeDomain = this.view.frame.worldToDomain(eye.x, -eye.z);
+    if (c.mode !== 'orbit' && eyeDomain.domain === DOMAIN_GPS) {
+      // Fly/walk: put the globe camera at the same eye point, looking the same way (review D9).
+      const e = this.view.chunks.exaggeration;
+      const ground = this.view.chunks.heightAt(eye.x, -eye.z) ?? 0;
+      const height = Math.max((eye.y - ground) + ground / e, 2);
+      camera.setView({
+        destination: Cesium.Cartesian3.fromDegrees(eyeDomain.lon, eyeDomain.lat, height),
+        orientation: {
+          heading: Cesium.Math.toRadians(f.heading),
+          pitch: Cesium.Math.toRadians(f.pitchDeg),
+          roll: 0,
+        },
+      });
+      synced = true;
+    } else if (f.domain.domain === DOMAIN_GPS && this.entryFocus) {
       const moved =
         Math.abs(f.domain.lat - this.entryFocus.lat) > 1e-5 ||
         Math.abs(f.domain.lon - this.entryFocus.lon) > 1e-5 ||
-        Math.abs(this.view.controls.distance - this.entryFocus.range) > 1;
+        Math.abs(c.distance - this.entryFocus.range) > 1 ||
+        Math.abs(c.yaw - this.entryFocus.yaw) > 1e-6 ||
+        Math.abs(c.pitch - this.entryFocus.pitch) > 1e-6 ||
+        c.mode !== this.entryFocus.mode;
       if (moved) {
         const e = this.view.chunks.exaggeration;
         const target = Cesium.Cartesian3.fromDegrees(f.domain.lon, f.domain.lat, (f.ground || 0) / e);
-        const c = this.view.controls;
         const range = Math.max(c.mode === 'orbit' ? c.distance : f.altitude, 50);
         camera.lookAt(
           target,
@@ -126,6 +153,8 @@ export class FlatWorldMode {
     }
     if (!synced && this.savedGlobe) camera.setView(this.savedGlobe);
     this.view.setActive(false);
+    // Free most of the flat-world terrain cache while the globe is shown (review D12).
+    this.view.chunks.trim?.(6);
     this.viewer.container.style.visibility = '';
     this.viewer.useDefaultRenderLoop = !document.hidden;
     document.body.classList.remove('flatworld-active');

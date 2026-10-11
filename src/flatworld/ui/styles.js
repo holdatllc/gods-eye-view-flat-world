@@ -8,7 +8,10 @@ body.flatworld-active #orbit-indicator,
 body.flatworld-active #cesium-credits,
 body.flatworld-active #safe-frame-overlay,
 body.flatworld-active #cockpit-cloud-effects,
-body.flatworld-active #first-run-launcher { display: none !important; }
+body.flatworld-active #first-run-launcher,
+body.flatworld-active #cockpit-hud,
+body.flatworld-active #intel-hud { display: none !important; }
+body:not(.flatworld-active) .flatworld-labels { display: none; }
 .flatworld-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .flatworld-label { position: absolute; left: 0; top: 0; font: 600 11px/1.3 ui-monospace, 'SF Mono', Menlo, monospace;
   color: #e9fbff; background: rgba(4, 16, 24, 0.78); border: 1px solid rgba(57, 225, 255, 0.55);

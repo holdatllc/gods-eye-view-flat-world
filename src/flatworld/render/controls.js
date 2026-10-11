@@ -42,6 +42,8 @@ export class FlatWorldControls {
     this.mode = 'orbit';
     // Orbit state
     this.target = { x: 0, y: 0, h: 0 };
+    /** When set (e.g. while tracking an aircraft), the orbit pivots at this height, not the ground. */
+    this.targetHeightLock = null;
     this.distance = 6.0e7;
     this.yaw = Math.PI / 2;
     this.pitch = Math.PI / 2 - 1e-3;
@@ -237,7 +239,7 @@ export class FlatWorldControls {
       this.onChange();
     }
     if (this.mode === 'orbit') {
-      const g = this.groundHeight(this.target.x, this.target.y);
+      const g = this.targetHeightLock ?? this.groundHeight(this.target.x, this.target.y);
       if (g !== null) this.target.h += (g - this.target.h) * Math.min(1, dt * 6);
       // Keyboard panning in orbit mode (arrows).
       const kx = (this.keys.has('arrowright') ? 1 : 0) - (this.keys.has('arrowleft') ? 1 : 0);

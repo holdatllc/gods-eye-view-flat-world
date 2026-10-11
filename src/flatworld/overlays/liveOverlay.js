@@ -18,7 +18,7 @@ const KINDS = {
   vessels: { color: 0x5dff8f, layer: 'ais-live-vessels', size: 1.4, label: 'Ship' },
   satellites: { color: 0xff5ad7, layer: 'satellites', size: 0.9, label: 'Satellite' },
 };
-const MAX_PER_KIND = 12000;
+const MAX_PER_KIND = 20000;
 
 function aircraftGeometry() {
   // A small swept-wing silhouette pointing along +X, unit length ≈ 1.
@@ -367,6 +367,7 @@ export class LiveOverlay {
 
   stopTracking() {
     this.tracked = null;
+    if (this.view) this.view.controls.targetHeightLock = null;
     this.groundTrack.visible = this.orbitPath.visible = false;
     this.trackMarker.visible = false;
     if (this.labels) this.labels.innerHTML = '';
@@ -389,6 +390,8 @@ export class LiveOverlay {
     if (c.mode === 'orbit' && !c.animation) {
       c.target.x += (r.world.x - c.target.x) * 0.2;
       c.target.y += (r.world.y - c.target.y) * 0.2;
+      // Pivot on the aircraft itself so it stays centred on screen (review D7).
+      c.targetHeightLock = r.drawn.y;
     }
     const dist = r.drawn.distanceTo(view.camera.position);
     this.trackMarker.position.copy(r.drawn).sub(this.group.position);
@@ -414,35 +417,60 @@ export class LiveOverlay {
   }
 
   /**
-   * Prove every drawn object sits at the projection of its source coordinates: invert each drawn
-   * position back to lat/lon and compare. Returns maxima in degrees and metres.
+   * Verify every drawn object against independent evidence:
+   * 1. projection exactness — the drawn 3D position inverts (through the domain frame) to the
+   *    geodetic point the overlay meant to draw;
+   * 2. source fidelity — that point lies on the segment between the contact's last two fixes
+   *    (latitude and longitude, wrap-aware), and the latest fix equals the value the layer reports
+   *    *now* when re-read fresh from the source module (or the source has moved on since the poll).
    */
   verify() {
-    const result = { checked: 0, maxLatErrDeg: 0, maxLonErrDeg: 0, maxAltErrM: 0, byKind: {} };
+    const result = {
+      checked: 0,
+      maxLatErrDeg: 0,
+      maxLonErrDeg: 0,
+      maxAltErrM: 0,
+      offSegment: 0,
+      latestFixMatchesSource: 0,
+      sourceMovedSincePoll: 0,
+      missingFromSource: 0,
+      byKind: {},
+    };
     const e = this.view?.chunks.exaggeration ?? 1;
+    const wrap = (d) => {
+      let x = ((d % 360) + 360) % 360;
+      if (x > 180) x -= 360;
+      return x;
+    };
     for (const [kind, recs] of Object.entries(this.records)) {
+      const fresh = new Map(this._readSource(kind).map((row) => [row.id, row]));
       let n = 0;
       for (const r of recs) {
         if (!r.drawn) continue;
-        const d = this.frame.worldToDomain(r.drawn.x, -r.drawn.z, r.drawn.y / e);
+        const local = r.drawn;
+        const d = this.frame.worldToDomain(local.x, -local.z, local.y / e);
         if (d.domain !== 'gps') {
           result.outOfDomain = (result.outOfDomain || 0) + 1;
           continue;
         }
         const dLat = Math.abs(d.lat - r.lat);
-        let dLon = Math.abs(d.lon - r.lon) % 360;
-        if (dLon > 180) dLon = 360 - dLon;
-        if (Math.abs(r.lat) > 89.9999) dLon = 0;
+        const dLon = Math.abs(r.lat) > 89.9999 ? 0 : Math.abs(wrap(d.lon - r.lon));
         result.maxLatErrDeg = Math.max(result.maxLatErrDeg, dLat);
         result.maxLonErrDeg = Math.max(result.maxLonErrDeg, dLon);
         result.maxAltErrM = Math.max(result.maxAltErrM, Math.abs(d.height - r.altitudeM));
-        // The displayed point must lie on the segment between two real source fixes.
         const f = r.fixes;
         const a = f[0];
         const b = f[f.length - 1];
-        const lo = Math.min(a.lat, b.lat) - 1e-9;
-        const hi = Math.max(a.lat, b.lat) + 1e-9;
-        if (r.lat < lo || r.lat > hi) result.offSegment = (result.offSegment || 0) + 1;
+        const tol = 1e-9;
+        const latOk = r.lat >= Math.min(a.lat, b.lat) - tol && r.lat <= Math.max(a.lat, b.lat) + tol;
+        const span = wrap(b.lon - a.lon);
+        const along = wrap(r.lon - a.lon);
+        const lonOk = Math.abs(span) < 1e-12 ? Math.abs(along) < 1e-6 : along / span >= -1e-6 && along / span <= 1 + 1e-6;
+        if (!latOk || !lonOk) result.offSegment += 1;
+        const src = fresh.get(r.id);
+        if (!src) result.missingFromSource += 1;
+        else if (src.lat === b.lat && src.lon === b.lon) result.latestFixMatchesSource += 1;
+        else result.sourceMovedSincePoll += 1;
         result.lagFractionMax = Math.max(result.lagFractionMax || 0, 1 - (r.alpha ?? 1));
         n += 1;
       }

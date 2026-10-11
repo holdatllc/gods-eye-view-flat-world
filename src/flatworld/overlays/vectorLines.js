@@ -36,6 +36,10 @@ export class VectorLines {
   _densify(a, b, push) {
     let dLon = b[0] - a[0];
     if (Math.abs(dLon) > 180) return; // ring edges never cross the antimeridian in this pack
+    // Polygons are cut at the antimeridian and Antarctica is closed through the pole; those
+    // edges are bookkeeping, not coastline (review D5).
+    if (Math.abs(a[0]) >= 179.99 && Math.abs(b[0]) >= 179.99) return;
+    if (a[1] <= -89.99 || b[1] <= -89.99) return;
     const dLat = b[1] - a[1];
     const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dLon), Math.abs(dLat)) / MAX_STEP_DEG));
     let prev = a;

@@ -37,6 +37,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
   const mode = new FlatWorldMode({
     viewer,
     view,
+    live,
     onChange: (active) => panel.setActive(active),
   });
 
