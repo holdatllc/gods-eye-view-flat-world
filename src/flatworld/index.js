@@ -99,8 +99,23 @@ export function mountFlatWorld({ viewer, dataManager }) {
     });
     // Selection goes through the globe's own layers (shared Context, readout, voice).
     const selection = createLiveSelection({ viewer, live, mode });
-    mode.afterEnter = () => selection.adoptGlobeTracking();
-    mode.beforeExit = () => selection.beforeExit();
+    // Flat mode shows every tracked satellite (~11,500, Starlink included) at true height by
+    // default; the globe's own lighter catalogue comes back on exit if we were the ones to switch.
+    let globeSatCatalog = null;
+    mode.afterEnter = () => {
+      selection.adoptGlobeTracking();
+      const current = live.satelliteCatalog();
+      if (live.isLayerOn('satellites') && current && current !== 'dense') {
+        globeSatCatalog = current;
+        live.setSatelliteCatalog('dense');
+      }
+    };
+    mode.beforeExit = () => {
+      selection.beforeExit();
+      if (globeSatCatalog && live.satelliteCatalog() === 'dense')
+        live.setSatelliteCatalog(globeSatCatalog);
+      globeSatCatalog = null;
+    };
     // Names, hover and click targets for every live object, and the selected object's card.
     const labels = new LiveLabels({
       live,
