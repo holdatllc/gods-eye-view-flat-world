@@ -11,8 +11,9 @@
  */
 import * as THREE from 'three';
 import { northAt } from '../render/controls.js';
+import { satelliteClassColor } from '../../data/satelliteClass.js';
 
-const KINDS = {
+export const KINDS = {
   flights: { color: 0x39e1ff, layer: 'flights', size: 1, label: 'Aircraft' },
   military: {
     color: 0xffb020,
@@ -34,6 +35,7 @@ const KINDS = {
   },
 };
 const MAX_PER_KIND = 20000;
+const SATELLITE_FALLBACK = new THREE.Color(KINDS.satellites.color);
 
 function aircraftGeometry() {
   // A small swept-wing silhouette pointing along +X, unit length ≈ 1.
@@ -95,8 +97,9 @@ export class LiveOverlay {
       satellites: true,
     };
     this.tracked = null;
+    /** Whether the camera follows the selected object (dragging the map stops following). */
+    this.following = false;
     this.lastPoll = 0;
-    this.labels = null;
     this.drawScale = 1;
     this.motion = 'interpolated';
     /** Off by default: satellites at their real height. On: at their sub-satellite ground point. */
@@ -110,13 +113,19 @@ export class LiveOverlay {
       satellites: new THREE.OctahedronGeometry(0.35),
     };
     for (const [kind, spec] of Object.entries(KINDS)) {
+      // Satellites take their class colour per instance (as on the globe).
       const mat = new THREE.MeshBasicMaterial({
-        color: spec.color,
+        color: kind === 'satellites' ? 0xffffff : spec.color,
         fog: false,
       });
       const mesh = new THREE.InstancedMesh(geos[kind], mat, MAX_PER_KIND);
       mesh.count = 0;
       mesh.frustumCulled = false;
+      if (kind === 'satellites')
+        mesh.instanceColor = new THREE.InstancedBufferAttribute(
+          new Float32Array(MAX_PER_KIND * 3),
+          3,
+        );
       mesh.userData.kind = kind;
       this.meshes[kind] = mesh;
       this.records[kind] = [];
@@ -224,13 +233,15 @@ export class LiveOverlay {
     this.view = view;
     view.scene.add(this.group);
     view.scene.add(this.trackLines);
-    this.labels = document.createElement('div');
-    this.labels.className = 'flatworld-labels';
-    view.host.appendChild(this.labels);
   }
 
   _module(layerId) {
     return this.dataManager?.layers?.get(layerId)?.module ?? null;
+  }
+
+  /** The app's layer module behind a flat-world kind (the same object the globe uses). */
+  layerModule(kind) {
+    return KINDS[kind] ? this._module(KINDS[kind].layer) : null;
   }
 
   isLayerOn(kind) {
@@ -253,6 +264,30 @@ export class LiveOverlay {
 
   toggleLayer(kind) {
     return this.dataManager?.toggle?.(KINDS[kind].layer, { origin: 'user' });
+  }
+
+  /** The satellite layer's catalogue: 'core' (~830 main satellites) or 'dense' (~11,500). */
+  satelliteCatalog() {
+    try {
+      return this.layerModule('satellites')?.getParams?.()?.catalog ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Switch the satellite layer's catalogue through the app's own layer-params path. */
+  setSatelliteCatalog(catalog) {
+    const layerId = KINDS.satellites.layer;
+    if (this.dataManager?.setLayerParams)
+      return this.dataManager.setLayerParams(
+        layerId,
+        { catalog },
+        { origin: 'user' },
+      );
+    return this.layerModule('satellites')?.setParams?.(
+      { catalog },
+      { origin: 'user' },
+    );
   }
 
   /**
@@ -301,6 +336,7 @@ export class LiveOverlay {
         speedMps: a.speedMps ?? null,
         onGround: a.onGround === true,
         source: mod.source ?? null,
+        group: a.group ?? null,
       });
     }
     return out;
@@ -354,12 +390,17 @@ export class LiveOverlay {
           if (r.fixes.length > 2) r.fixes.shift();
           r.lastFixMs = now;
         }
+        if (kind === 'satellites' && (!r.colorObj || r.group !== row.group)) {
+          r.classColor = satelliteClassColor(row.group);
+          r.colorObj = new THREE.Color(r.classColor);
+        }
         Object.assign(r, {
           label: row.label,
           heading: row.heading,
           speedMps: row.speedMps,
           source: row.source,
           onGround: row.onGround,
+          group: row.group,
         });
         byId.set(row.id, r);
         next.push(r);
@@ -471,6 +512,7 @@ export class LiveOverlay {
         s.setScalar(size);
         m.compose(p.clone().sub(origin), q, s);
         mesh.setMatrixAt(i, m);
+        if (mesh.instanceColor) mesh.setColorAt(i, r.colorObj ?? SATELLITE_FALLBACK);
         r.instance = i;
         r.drawn = p.clone();
         i += 1;
@@ -484,6 +526,7 @@ export class LiveOverlay {
       }
       mesh.count = i;
       mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
       // Raycasting culls against the bounding sphere; recompute it lazily from the current
       // instances (it would otherwise stay empty if the layer had no data on the first frame).
       mesh.boundingSphere = null;
@@ -497,8 +540,10 @@ export class LiveOverlay {
     return this.records[kind]?.find((r) => r.id === id) ?? null;
   }
 
+  /** Select an object and follow it with the camera. */
   track(kind, id) {
     this.tracked = { kind, id };
+    this.following = true;
     this.groundTrack.visible = this.orbitPath.visible = false;
     if (kind === 'satellites') this._buildSatelliteTrack(id);
     this.onTrackingChange(this._find(kind, id));
@@ -519,14 +564,28 @@ export class LiveOverlay {
     }
   }
 
+  /** Deselect: no selected object, no follow. */
   stopTracking() {
     const was = this.tracked;
     this.tracked = null;
+    this.following = false;
     if (was) this.onTrackingChange(null);
     if (this.view) this.view.controls.targetHeightLock = null;
     this.groundTrack.visible = this.orbitPath.visible = false;
     this.trackMarker.visible = false;
-    if (this.labels) this.labels.innerHTML = '';
+  }
+
+  /** Keep the selection but stop moving the camera with it (the user took the camera). */
+  releaseFollow() {
+    if (!this.following) return;
+    this.following = false;
+    if (this.view) this.view.controls.targetHeightLock = null;
+  }
+
+  /** Follow the selected object again, flying to it first. */
+  follow() {
+    if (!this.tracked) return;
+    this.track(this.tracked.kind, this.tracked.id);
   }
 
   _updateTracking(view) {
@@ -546,7 +605,7 @@ export class LiveOverlay {
       return;
     }
     const c = view.controls;
-    if (c.mode === 'orbit' && !c.animation) {
+    if (this.following && c.mode === 'orbit' && !c.animation) {
       c.target.x += (r.world.x - c.target.x) * 0.2;
       c.target.y += (r.world.y - c.target.y) * 0.2;
       // Pivot on the aircraft itself so it stays centred on screen (review D7).
@@ -556,17 +615,6 @@ export class LiveOverlay {
     this.trackMarker.position.copy(r.drawn).sub(this.group.position);
     this.trackMarker.scale.setScalar(dist * 0.03);
     this.trackMarker.visible = true;
-    const screen = view.worldToScreen(r.drawn);
-    if (screen && this.labels) {
-      const alt =
-        r.kind === 'vessels'
-          ? ''
-          : ` · ${Math.round(r.altitudeM).toLocaleString()} m`;
-      const hdg = Number.isFinite(r.heading)
-        ? ` · ${Math.round(r.heading)}°`
-        : '';
-      this.labels.innerHTML = `<div class="flatworld-label" style="transform:translate(${Math.round(screen.x + 14)}px,${Math.round(screen.y - 10)}px)">${escapeHtml(r.label)}<span>${r.lat.toFixed(4)}, ${r.lon.toFixed(4)}${alt}${hdg}</span></div>`;
-    }
   }
 
   /** Raycast the instanced meshes; returns the nearest record under the cursor. */
@@ -670,7 +718,6 @@ export class LiveOverlay {
   destroy() {
     this.group.removeFromParent();
     this.trackLines.removeFromParent();
-    this.labels?.remove();
   }
 }
 
@@ -702,14 +749,4 @@ export function plausibleStep(a, b, row) {
   )
     return false;
   return true;
-}
-
-function escapeHtml(s) {
-  return String(s).replace(
-    /[&<>"']/g,
-    (c) =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[
-        c
-      ],
-  );
 }

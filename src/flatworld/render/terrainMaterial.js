@@ -12,6 +12,9 @@ export function createTerrainMaterial() {
     uSunEcef: { value: new THREE.Vector3(1, 0, 0) },
     uIceDay: { value: 1 },
     uNightLevel: { value: 0.12 },
+    // City-light strength: full from far away, faded close up where the 5 km Black Marble pixels
+    // would otherwise smear into blobs.
+    uNightLights: { value: 1 },
     uDistortion: { value: 0 },
     uDomainTint: { value: 0 },
     uBoundary: { value: 20003931.4586 },
@@ -54,6 +57,7 @@ vWorldNormal = objectNormal;`,
 uniform vec3 uSunEcef;
 uniform float uIceDay;
 uniform float uNightLevel;
+uniform float uNightLights;
 uniform float uDistortion;
 uniform float uDomainTint;
 uniform float uBoundary;
@@ -106,7 +110,7 @@ roughnessFactor = mix(roughnessFactor, 0.14, clamp(vWater, 0.0, 1.0));`,
   }
   // Night side: dim moonlit tint plus real city lights (Black Marble, stored in the map's alpha).
   vec3 night = gl_FragColor.rgb * vec3(0.55, 0.65, 1.0) * uNightLevel;
-  night += vec3(1.0, 0.72, 0.38) * pow(nightLights, 2.0) * 1.4;
+  night += vec3(1.0, 0.72, 0.38) * pow(nightLights, 2.0) * 1.4 * uNightLights;
   gl_FragColor.rgb = mix(night, gl_FragColor.rgb, day);
   gl_FragColor.a = 1.0;
   float r = length(vPlane);

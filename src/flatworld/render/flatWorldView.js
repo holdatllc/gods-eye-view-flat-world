@@ -340,6 +340,10 @@ export class FlatWorldView {
     const global = THREE.MathUtils.smoothstep(alt, 150000, 1500000);
     const u = this.chunks.material.uniforms;
     u.uGlobalLight.value = global;
+    // Close up at night: fade the coarse city-light layer and keep the ground faintly visible.
+    const near = 1 - THREE.MathUtils.smoothstep(alt, 30000, 500000);
+    u.uNightLights.value = 1 - 0.8 * near;
+    u.uNightLevel.value = 0.12 + 0.33 * near;
     this.sun.intensity = 3.2 * day * (1 - global);
     this.hemi.intensity = (0.25 + 0.75 * day) * (1 - global) + 0.05;
     {

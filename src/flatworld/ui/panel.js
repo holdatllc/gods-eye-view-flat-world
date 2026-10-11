@@ -53,6 +53,8 @@ export function createPanel({
   frame,
   attributions,
   toggle,
+  selection,
+  labels,
 }) {
   const panel = el('div', {
     class: 'fw-panel',
@@ -389,7 +391,12 @@ export function createPanel({
     ['vessels', 'SHIPS'],
     ['satellites', 'SATELLITES'],
   ]) {
-    layerButtons[kind] = button(label, () => live.toggleLayer(kind));
+    layerButtons[kind] = button(label, () => {
+      const turningOn = !live.isLayerOn(kind);
+      live.toggleLayer(kind);
+      // Satellites open with the full catalogue (all ~11,500, Starlink included), as asked.
+      if (kind === 'satellites' && turningOn) live.setSatelliteCatalog('dense');
+    });
     layerButtons[kind].dataset.label = label;
     layerRow.append(layerButtons[kind]);
   }
@@ -399,16 +406,32 @@ export function createPanel({
       ? 'SATELLITES: GROUND POINT'
       : 'SATELLITES: TRUE HEIGHT';
   });
+  const namesBtn = button(
+    'NAMES',
+    () => {
+      labels.enabled = !labels.enabled;
+      namesBtn.classList.toggle('on', labels.enabled);
+    },
+    true,
+  );
+  const allSatsBtn = button('ALL SATELLITES', () =>
+    live.setSatelliteCatalog(
+      live.satelliteCatalog() === 'dense' ? 'core' : 'dense',
+    ),
+  );
+  allSatsBtn.title =
+    'On: every tracked satellite including the Starlink shell (~11,500). Off: the ~830 main satellites (the globe default).';
   const layerStatus = el('div', { class: 'fw-note fw-warn' });
   const trackedBox = el('div', { class: 'fw-kv' });
   layers.append(
     layerRow,
+    el('div', { class: 'fw-row' }, namesBtn, allSatsBtn),
     el('div', { class: 'fw-row' }, satGroundBtn),
     layerStatus,
     el(
       'div',
       { class: 'fw-note' },
-      'Click an aircraft, ship or satellite to track it. Satellites are drawn at their real height; seen from far above, high orbits appear outside the disc by perspective.',
+      'Click any aircraft, ship or satellite (any dot or name) to select it: its card opens and the camera follows it. Drag the map to stop following; Esc, ✕ or a click on empty ground deselects. Satellites are drawn at their real height; seen from far above, high orbits appear outside the disc by perspective.',
     ),
     trackedBox,
   );
@@ -425,7 +448,7 @@ export function createPanel({
       ? Math.round((Date.now() - r.lastFixMs) / 1000)
       : null;
     kv(trackedBox, [
-      ['Tracking', r.label],
+      [live.following ? 'Following' : 'Selected', r.label],
       [
         'Latest fix',
         fix ? `${fix.lat.toFixed(5)}, ${fix.lon.toFixed(5)}` : '—',
@@ -442,7 +465,7 @@ export function createPanel({
         r.kind === 'vessels' ? 'Height' : 'Altitude',
         `${Math.round(r.altitudeM)} m${r.onGround ? ' (on ground)' : ''}`,
       ],
-      ['', button('STOP TRACKING', () => live.stopTracking())],
+      ['', button('DESELECT', () => selection.deselect())],
     ]);
   }
 
@@ -853,6 +876,7 @@ export function createPanel({
     }
     for (const [m, b] of Object.entries(modeButtons))
       b.classList.toggle('on', view.controls.mode === m);
+    allSatsBtn.classList.toggle('on', live.satelliteCatalog() === 'dense');
     for (const [k, b] of Object.entries(layerButtons)) {
       b.classList.toggle('on', live.isLayerOn(k));
       const n = live.records[k]?.length;

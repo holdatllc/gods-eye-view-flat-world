@@ -11,12 +11,24 @@ body.flatworld-active #cockpit-cloud-effects,
 body.flatworld-active #first-run-launcher,
 body.flatworld-active #cockpit-hud,
 body.flatworld-active #intel-hud { display: none !important; }
-body:not(.flatworld-active) .flatworld-labels { display: none; }
-.flatworld-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
-.flatworld-label { position: absolute; left: 0; top: 0; font: 600 11px/1.3 ui-monospace, 'SF Mono', Menlo, monospace;
-  color: #e9fbff; background: rgba(4, 16, 24, 0.78); border: 1px solid rgba(57, 225, 255, 0.55);
-  padding: 3px 7px; border-radius: 4px; white-space: nowrap; letter-spacing: 0.04em; }
-.flatworld-label span { display: block; font-weight: 400; color: #8fd8ea; font-size: 10px; }
+/* Names of live objects (canvas) and the selected object's card. */
+.fw-live-labels { position: absolute; left: 0; top: 0; pointer-events: none; }
+body:not(.flatworld-active) .fw-live-labels, body:not(.flatworld-active) .fw-card { display: none; }
+.fw-card { position: absolute; left: 0; top: 0; z-index: 4; min-width: 190px; max-width: 280px; pointer-events: auto;
+  font: 11px/1.45 ui-monospace, 'SF Mono', Menlo, monospace; color: #d6f3fb; background: rgba(4, 14, 20, 0.9);
+  border: 1px solid rgba(57, 225, 255, 0.35); border-left: 3px solid var(--fw-accent, #39e1ff); border-radius: 6px;
+  padding: 7px 9px 8px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45); }
+.fw-card[hidden] { display: none; }
+.fw-card-head { display: flex; align-items: flex-start; gap: 8px; }
+.fw-card-title { flex: 1; font-weight: 700; color: #fff; letter-spacing: 0.05em; word-break: break-word; }
+.fw-card-x { background: none; border: 0; color: #8fd8ea; cursor: pointer; font: inherit; padding: 0 2px; }
+.fw-card-x:hover { color: #fff; }
+.fw-card-line { white-space: pre-wrap; }
+.fw-card-line.dim { color: #7fb6c6; font-size: 10px; }
+.fw-card-actions { margin-top: 6px; }
+.fw-card-follow { font: 600 10px ui-monospace, 'SF Mono', Menlo, monospace; letter-spacing: 0.08em; color: #bff4ff;
+  background: rgba(57, 225, 255, 0.08); border: 1px solid rgba(57, 225, 255, 0.4); border-radius: 4px; padding: 3px 8px; cursor: pointer; }
+.fw-card-follow:hover { border-color: #39e1ff; color: #fff; }
 .fw-toggle { position: fixed; top: 102px; left: 50%; transform: translateX(-50%); z-index: 60;
   font: 600 11px ui-monospace, 'SF Mono', Menlo, monospace; letter-spacing: 0.14em; color: #bff4ff;
   background: rgba(6, 18, 26, 0.82); border: 1px solid rgba(57, 225, 255, 0.5); border-radius: 18px;

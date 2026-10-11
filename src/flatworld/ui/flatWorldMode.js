@@ -109,6 +109,14 @@ export class FlatWorldMode {
     this.syncTimer = setInterval(() => this.syncHiddenGlobe(), 2000);
     this.followTimer = setInterval(() => this.followGlobeRequests(), 400);
     this.onChange(true);
+    this.afterEnter?.();
+  }
+
+  /** The hidden globe camera's current position is ours (e.g. a selection), not a request. */
+  markGlobeSynced() {
+    this.lastSyncedPosition = Cesium.Cartesian3.clone(
+      this.viewer.camera.positionWC,
+    );
   }
 
   /**
@@ -127,7 +135,8 @@ export class FlatWorldMode {
     if (moved < 500) return;
     const globe = this.readGlobe();
     this.lastSyncedPosition = Cesium.Cartesian3.clone(p);
-    this.live?.stopTracking();
+    // Going somewhere else keeps the selection but stops following it.
+    this.live?.releaseFollow();
     this.view.lookAtGeodetic({
       ...globe.focus,
       range: Math.min(globe.focus.range, 5.4e7),
@@ -162,11 +171,13 @@ export class FlatWorldMode {
    */
   exit() {
     if (!this.active) return;
+    this.beforeExit?.();
     clearInterval(this.syncTimer);
     clearInterval(this.followTimer);
-    const trackedHeight = this.live?.tracked
-      ? this.view.controls.targetHeightLock
-      : null;
+    const trackedHeight =
+      this.live?.tracked && this.live.following
+        ? this.view.controls.targetHeightLock
+        : null;
     this.live?.stopTracking();
     const flatAnimation = this.view.controls.animation;
     if (flatAnimation) {

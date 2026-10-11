@@ -11,6 +11,7 @@ import * as THREE from 'three';
 import { FlatWorldView } from './render/flatWorldView.js';
 import { FlatWorldMode } from './ui/flatWorldMode.js';
 import { LiveOverlay } from './overlays/liveOverlay.js';
+import { LiveLabels } from './overlays/liveLabels.js';
 import { VectorLines } from './overlays/vectorLines.js';
 import { IceEnvironment } from './ice/iceEnvironment.js';
 import { RouteLayer } from './nav/routeLayer.js';
@@ -23,6 +24,7 @@ import {
 import { allAttributions, attributionHtml } from './sources/catalog.js';
 import { installStyles } from './ui/styles.js';
 import { createPanel } from './ui/panel.js';
+import { createLiveSelection } from './ui/liveSelection.js';
 
 function createToggle() {
   const toggle = document.createElement('button');
@@ -90,8 +92,21 @@ export function mountFlatWorld({ viewer, dataManager }) {
       live,
       onChange: (active) => panel.setActive(active),
     });
-    // Moving the camera yourself ends tracking (the camera would otherwise snap back).
-    view.controls.onUserInput = () => live.stopTracking();
+    // Selection goes through the globe's own layers (shared Context, readout, voice).
+    const selection = createLiveSelection({ viewer, live, mode });
+    mode.afterEnter = () => selection.adoptGlobeTracking();
+    mode.beforeExit = () => selection.beforeExit();
+    // Names, hover and click targets for every live object, and the selected object's card.
+    const labels = new LiveLabels({
+      live,
+      describe: selection.describe,
+      onClose: () => selection.deselect(),
+    });
+    view.addLayer(labels);
+    view.addLayer({ update: () => selection.update() });
+    // Moving the camera yourself stops following (it would otherwise snap back); the selection
+    // and its card stay until you deselect.
+    view.controls.onUserInput = () => live.releaseFollow();
 
     const panel = createPanel({
       view,
@@ -104,10 +119,15 @@ export function mountFlatWorld({ viewer, dataManager }) {
       frame,
       attributions: allAttributions(),
       toggle,
+      selection,
+      labels,
     });
 
-    // Picking: click selects a live object to track, or adds a route point while measuring.
+    // Picking: a click selects the aircraft, ship or satellite nearest the cursor (every drawn
+    // dot is a target, however small), adds a route point while measuring, or deselects when it
+    // lands on empty ground — as on the globe.
     const raycaster = new THREE.Raycaster();
+    const hitRadius = (e) => (e.pointerType === 'touch' ? 24 : 14);
     let down = null;
     view.canvas.addEventListener('pointerdown', (e) => {
       down = { x: e.clientX, y: e.clientY };
@@ -115,24 +135,27 @@ export function mountFlatWorld({ viewer, dataManager }) {
     view.canvas.addEventListener('pointerup', (e) => {
       if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4)
         return;
-      const rect = view.canvas.getBoundingClientRect();
-      raycaster.setFromCamera(
-        new THREE.Vector2(
-          ((e.clientX - rect.left) / rect.width) * 2 - 1,
-          -((e.clientY - rect.top) / rect.height) * 2 + 1,
-        ),
-        view.camera,
-      );
-      if (!routes.measuring) {
-        const rec = live.pick(raycaster);
-        if (rec) {
-          live.track(rec.kind, rec.id);
-          panel.showTracked(rec);
-          return;
-        }
+      if (routes.measuring) {
+        const p = view.pick(e.clientX, e.clientY);
+        if (p) routes.addPoint(p);
+        return;
       }
-      const p = view.pick(e.clientX, e.clientY);
-      if (p && routes.measuring) routes.addPoint(p);
+      let rec = labels.nearest(e.clientX, e.clientY, hitRadius(e));
+      if (!rec) {
+        const rect = view.canvas.getBoundingClientRect();
+        raycaster.setFromCamera(
+          new THREE.Vector2(
+            ((e.clientX - rect.left) / rect.width) * 2 - 1,
+            -((e.clientY - rect.top) / rect.height) * 2 + 1,
+          ),
+          view.camera,
+        );
+        rec = live.pick(raycaster);
+      }
+      if (rec) {
+        selection.select(rec);
+        panel.showTracked(rec);
+      } else if (live.tracked) selection.deselect();
     });
     let hoverPending = false;
     view.canvas.addEventListener('pointermove', (e) => {
@@ -140,11 +163,35 @@ export function mountFlatWorld({ viewer, dataManager }) {
       hoverPending = true;
       requestAnimationFrame(() => {
         hoverPending = false;
+        const rec =
+          e.buttons === 0 && !routes.measuring
+            ? labels.nearest(e.clientX, e.clientY, hitRadius(e))
+            : null;
+        labels.setHover(rec);
+        view.canvas.style.cursor = rec ? 'pointer' : '';
         panel.showCursor(view.pick(e.clientX, e.clientY));
       });
     });
+    view.canvas.addEventListener('pointerleave', () => labels.setHover(null));
+    // Esc deselects (the globe's own layers also clear their tracking on Esc).
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && mode.active && live.tracked)
+        selection.deselect();
+    });
 
-    world = { view, mode, live, vectors, ice, routes, buildings, frame, panel };
+    world = {
+      view,
+      mode,
+      live,
+      labels,
+      selection,
+      vectors,
+      ice,
+      routes,
+      buildings,
+      frame,
+      panel,
+    };
     Object.assign(api, world, {
       diagnostics: () => view.diagnostics(),
       verifyLive: () => live.verify(),
