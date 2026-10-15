@@ -122,6 +122,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
     // off here. The globe's own catalogue and on/off state come back on exit.
     let globeSatCatalog = null;
     let satsTurnedOn = false;
+    let layersTurnedOn = [];
     let satCheckAt = 0;
     function applySatelliteDefault() {
       if (!mode.active || !live.isLayerOn('satellites')) return;
@@ -148,6 +149,12 @@ export function mountFlatWorld({ viewer, dataManager }) {
         live.toggleLayer('satellites');
         satsTurnedOn = true;
       }
+      // Live aircraft are on in the flat world (the cockpit needs both flight layers); a fresh
+      // browser starts the globe with them off. Restored on exit.
+      layersTurnedOn = ['flights', 'military'].filter(
+        (k) => !live.isLayerOn(k),
+      );
+      for (const k of layersTurnedOn) live.toggleLayer(k);
       applySatelliteDefault();
     };
     mode.beforeExit = () => {
@@ -157,6 +164,9 @@ export function mountFlatWorld({ viewer, dataManager }) {
         live.setSatelliteCatalog(globeSatCatalog);
       if (satsTurnedOn && live.isLayerOn('satellites'))
         live.toggleLayer('satellites');
+      for (const k of layersTurnedOn)
+        if (live.isLayerOn(k)) live.toggleLayer(k);
+      layersTurnedOn = [];
       globeSatCatalog = null;
       satsTurnedOn = false;
     };
