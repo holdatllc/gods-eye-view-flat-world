@@ -553,7 +553,13 @@ export class LiveOverlay {
         else r.drawn = p.clone();
         i += 1;
         if (kind !== 'vessels' && stalkCount < 4096 && dist < 3e6) {
-          const g = view.chunks.heightAt(w.x, w.y) ?? 0;
+          // Ground under the stalk: terrain lookups are costly at street level (fine chunks)
+          // and thousands of stalks are in range there, so each is refreshed once a second.
+          if (!(now - (r.stalkGroundAt || 0) < 1000)) {
+            r.stalkGround = view.chunks.heightAt(w.x, w.y) ?? 0;
+            r.stalkGroundAt = now;
+          }
+          const g = r.stalkGround;
           const lx = w.x - origin.x;
           const lz = -w.y - origin.z;
           stalkPos.set([lx, y, lz, lx, Math.min(g, y), lz], stalkCount * 6);
