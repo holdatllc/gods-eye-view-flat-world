@@ -30,6 +30,7 @@ import { createPanel } from './ui/panel.js';
 import { createLiveSelection } from './ui/liveSelection.js';
 import { createFlatCockpit } from './ui/flatCockpit.js';
 import { FlightPath } from './nav/flightPath.js';
+import { GlobeEntityMirror } from './overlays/globeEntities.js';
 
 function createToggle() {
   const toggle = document.createElement('button');
@@ -109,6 +110,9 @@ export function mountFlatWorld({ viewer, dataManager }) {
     // The selected flight's route: the globe's great circle and the flat map's straight line.
     const flightPath = new FlightPath({ frame, live, selection });
     view.addLayer(flightPath);
+    // Nearby sites and space missions: the globe's own markers, drawn through the projection.
+    const globeMarkers = new GlobeEntityMirror({ viewer, frame, dataManager });
+    view.addLayer(globeMarkers);
     // Flat mode shows every tracked satellite (~11,500, Starlink included) at true height by
     // default: the layer is switched on, and the full catalogue applied whenever the layer is on
     // (also when it is switched on later, from any control) unless ALL SATELLITES was switched
@@ -228,6 +232,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
       selection,
       labels,
       flightPath,
+      globeMarkers,
     });
 
     // Picking: a click selects the aircraft, ship or satellite nearest the cursor (every drawn
@@ -263,6 +268,12 @@ export function mountFlatWorld({ viewer, dataManager }) {
       if (rec) {
         selection.select(rec);
         panel.showTracked(rec);
+        return;
+      }
+      const marker = globeMarkers.nearest(e.clientX, e.clientY, hitRadius(e));
+      if (marker) {
+        if (live.tracked) selection.deselect();
+        globeMarkers.select(marker);
       } else if (live.tracked) selection.deselect();
     });
     let hoverPending = false;
@@ -308,6 +319,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
       panel,
       cockpit,
       flightPath,
+      globeMarkers,
     };
     Object.assign(api, world, {
       diagnostics: () => view.diagnostics(),

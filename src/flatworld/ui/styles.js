@@ -20,6 +20,12 @@ body.flatworld-active.cockpit-mode .fw-sky-corner,
 body.flatworld-active.cockpit-mode .fw-sky-cards,
 body.flatworld-active.cockpit-mode .fw-wall-label,
 body.flatworld-active.cockpit-mode .fw-credits { display: none !important; }
+/* Globe markers mirrored into the flat world (nearby sites, space missions). */
+.fw-globe-labels { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 3; }
+.fw-globe-labels[hidden], body:not(.flatworld-active) .fw-globe-labels, body.cockpit-mode .fw-globe-labels { display: none; }
+.fw-globe-label { position: absolute; left: 0; top: 0; margin: -7px 0 0 9px; white-space: nowrap;
+  font: 600 10px ui-monospace, 'SF Mono', Menlo, monospace; color: #fff; padding: 1px 5px; border-radius: 3px;
+  background: rgba(4, 14, 20, 0.78); border-left: 2px solid var(--fw-accent, #ffb84d); }
 /* Flight-path labels (great circle vs flat straight line). */
 .fw-route-labels { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 3; }
 body:not(.flatworld-active) .fw-route-labels { display: none; }

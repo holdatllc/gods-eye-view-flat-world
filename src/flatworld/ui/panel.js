@@ -56,6 +56,7 @@ export function createPanel({
   selection,
   labels,
   flightPath = null,
+  globeMarkers = null,
 }) {
   const panel = el('div', {
     class: 'fw-panel',
@@ -436,11 +437,21 @@ export function createPanel({
   flightPathBtn.title =
     "Selected aircraft: draw its route between origin and destination airports, both ways — the globe's great circle (cyan) and the flat map's straight line (amber), each labelled with its length.";
   const flightPathNote = el('div', { class: 'fw-note' });
+  const globeMarkersBtn = button(
+    'SITES & MISSIONS',
+    () => {
+      globeMarkers?.setEnabled(!globeMarkers.enabled);
+      globeMarkersBtn.classList.toggle('on', Boolean(globeMarkers?.enabled));
+    },
+    Boolean(globeMarkers?.enabled),
+  );
+  globeMarkersBtn.title =
+    "Draw the globe's own markers here: nearby sites from Contacts (SEARCH NEARBY SITES) and the selected space mission's pad, trajectory and orbit. Click one to select it.";
   layers.append(
     layerRow,
     el('div', { class: 'fw-row' }, namesBtn, allSatsBtn),
     el('div', { class: 'fw-row' }, satGroundBtn),
-    el('div', { class: 'fw-row' }, flightPathBtn),
+    el('div', { class: 'fw-row' }, flightPathBtn, globeMarkersBtn),
     flightPathNote,
     layerStatus,
     el(
