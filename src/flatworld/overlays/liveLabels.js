@@ -7,6 +7,7 @@
  * avoidance (most important and nearest first) so they never pile on top of each other.
  */
 import * as THREE from 'three';
+import { formatFlightLevel } from '../../data/detectionDraw.js';
 
 const KIND_STYLE = {
   flights: { color: '#39e1ff', base: 4 },
@@ -157,14 +158,11 @@ export class LiveLabels {
   _labelText(rec) {
     const name = String(rec.label || rec.id || '').slice(0, 28);
     // Aircraft read as on the globe: callsign and flight level ("AAL299 FL390").
-    // Globe wording: flight level from FL180 up, feet below it, nothing on the ground.
+    // The globe's fleet-label wording (detection labels): formatFlightLevel at every altitude
+    // above 0 m, nothing on the ground. Feet are only on the selected plane's card.
     if (rec.kind === 'flights' || rec.kind === 'military') {
-      if (rec.onGround || !Number.isFinite(rec.altitudeM) || rec.altitudeM <= 0)
-        return name;
-      const ft = Math.round(rec.altitudeM * 3.28084);
-      return ft >= 18000
-        ? `${name} FL${String(Math.round(ft / 100)).padStart(3, '0')}`
-        : `${name} ${ft} ft`;
+      const fl = rec.onGround ? '' : formatFlightLevel(rec.altitudeM);
+      return fl ? `${name} ${fl}` : name;
     }
     return name;
   }

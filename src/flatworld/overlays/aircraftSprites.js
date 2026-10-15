@@ -13,6 +13,7 @@ import * as THREE from 'three';
 import { aircraftIcon } from '../../data/aircraftIcons.js';
 import { CLASS_SCALE_2D } from '../../data/aircraftClass.js';
 import { GROUND_SCALE } from '../../layers/flights/policy.js';
+import { BILLBOARD_SCALE as MILITARY_SCALE } from '../../layers/military/policy.js';
 
 const KINDS = ['flights', 'military'];
 const COLOR = {
@@ -170,7 +171,8 @@ export class AircraftSprites {
         size[i] =
           (sel ? TRACKED_PX : ICON_PX) *
           (CLASS_SCALE_2D[r.aircraftClass] || 1) *
-          (r.onGround ? GROUND_SCALE : 1);
+          (r.onGround ? GROUND_SCALE : 1) *
+          (k === 'military' ? MILITARY_SCALE : 1);
         i += 1;
       }
     }
