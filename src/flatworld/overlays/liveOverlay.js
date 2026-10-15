@@ -353,6 +353,11 @@ export class LiveOverlay {
           ? a.verticalRateMps
           : null,
         aircraftClass: a.aircraftClass ?? null,
+        // Military type label as the globe's layer gives it (TR-3B swap included).
+        typeLabel:
+          typeof a.type === 'string'
+            ? a.type
+            : (mod.getDisplayType?.(a.icao24 ?? a.id) ?? null),
         onGround: a.onGround === true,
         source: mod.source ?? null,
         group: a.group ?? null,
@@ -419,6 +424,7 @@ export class LiveOverlay {
           speedMps: row.speedMps,
           verticalRateMps: row.verticalRateMps,
           aircraftClass: row.aircraftClass,
+          typeLabel: row.typeLabel,
           source: row.source,
           onGround: row.onGround,
           group: row.group,

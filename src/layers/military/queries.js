@@ -194,6 +194,17 @@ export function createQueries({
   const methods = {
     mapAnalystRecord,
 
+    /**
+     * Display type of one contact as its detection label shows it (TR-3B swap included), for
+     * the flat world's labels; null when unknown.
+     * @param {string} icao24
+     * @returns {string|null}
+     */
+    getDisplayType(icao24) {
+      const info = flightState.records.data.get(icao24);
+      return info ? tr3bTypeLabel(icao24, info.type || null) : null;
+    },
+
     id: 'military',
 
     name: 'Military Flights',
