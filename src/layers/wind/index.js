@@ -412,6 +412,10 @@ export function createWindLayer({
       inspectionMarker?.destroy();
       inspectionMarker = null;
     },
+    /** The loaded wind grid ({u, v, nx, ny, lo1, la1, dx, dy}) or null. */
+    getField() {
+      return enabled ? (rendering?.getField?.() ?? null) : null;
+    },
     getStats() {
       const diagnostic = rendering?.getDiagnostics?.();
       const preparing =

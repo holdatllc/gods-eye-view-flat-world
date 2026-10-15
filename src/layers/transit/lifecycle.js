@@ -129,11 +129,13 @@ export function createLifecycle({ state, services, parts }) {
       state._markers = new Cesium.BillboardCollection({
         blendOption: Cesium.BlendOption.TRANSLUCENT,
       });
+      state._markers.gevLayerId = 'transit';
       viewer.scene.primitives.add(state._markers);
       registerSpriteCollection('transit', state._markers);
       state._animatedMarkers = new Cesium.BillboardCollection({
         blendOption: Cesium.BlendOption.TRANSLUCENT,
       });
+      state._animatedMarkers.gevLayerId = 'transit';
       viewer.scene.primitives.add(state._animatedMarkers);
       registerSpriteCollection('transit-motion', state._animatedMarkers);
       state._animatedMarkers.show = false;
