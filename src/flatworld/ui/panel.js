@@ -63,8 +63,10 @@ export function createPanel({
   /** Smooth mode: satellites re-placed 10×/s and a lighter pixel ratio on high-DPI screens. */
   function applySmooth(on) {
     live.smooth = on;
+    view.autoQuality = on;
+    view.pixelRatioCap = on ? 1.5 : 2;
     view.renderer.setPixelRatio(
-      Math.min(window.devicePixelRatio || 1, on ? 1.5 : 2),
+      Math.min(window.devicePixelRatio || 1, view.pixelRatioCap),
     );
     view.resize();
   }
@@ -206,7 +208,25 @@ export function createPanel({
     view.sharpPhotos = on;
     view.lodPixelScale = on ? Math.min(window.devicePixelRatio || 1, 1.5) : 1;
     view.chunks.maxLevel = on ? 20 : 19;
+    // Finer chunks (and so finer photo zooms) under the camera when on.
+    view.basePixelTolerance = on ? 0.9 : 1.25;
+    view.chunks.pixelTolerance = view.basePixelTolerance;
   }
+  // TRUE PHOTO COLOURS: the photo unlit and without the tone curve, as on the globe.
+  function applyTruePhoto(on) {
+    view.chunks.material.uniforms.uTruePhoto.value = on ? 1 : 0;
+  }
+  const truePhotoBtn = button(
+    'TRUE PHOTO COLOURS',
+    () => {
+      const on = !view.chunks.material.uniforms.uTruePhoto.value;
+      applyTruePhoto(on);
+      truePhotoBtn.classList.toggle('on', on);
+    },
+    true,
+  );
+  truePhotoBtn.title =
+    'On: the satellite photo at its own brightness and colours, as the globe shows it. Off: sun-shaded with a film tone curve (relief shading, darker).';
   const sharpBtn = button(
     'GLOBE-SHARP PHOTOS',
     () => {
@@ -312,7 +332,7 @@ export function createPanel({
     ),
     lookRow.row,
     lookSlider,
-    el('div', { class: 'fw-row' }, sharpBtn),
+    el('div', { class: 'fw-row' }, sharpBtn, truePhotoBtn),
     el(
       'div',
       { class: 'fw-note' },

@@ -104,7 +104,8 @@ export class AircraftSprites {
   }
 
   _ensure(n) {
-    if (n <= this.capacity) return;
+    // Always allocate once, even with no aircraft (layers off), so the buffers exist.
+    if (n <= this.capacity && this.capacity > 0) return;
     this.capacity = Math.max(n, Math.ceil(this.capacity * 1.5), 1024);
     const g = this.geometry;
     g.setAttribute(

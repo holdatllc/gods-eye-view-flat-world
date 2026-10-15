@@ -23,6 +23,8 @@ export function createTerrainMaterial() {
     uIceSun: { value: new THREE.Vector3(0.3, 0.8, 0.24) },
     uSunStrength: { value: 3.4 },
     uIceFixedSun: { value: 0 },
+    // TRUE PHOTO COLOURS: the satellite photo as the globe shows it (unlit, no tone curve).
+    uTruePhoto: { value: 1 },
   };
 
   const onBeforeCompile = (shader) => {
@@ -66,6 +68,7 @@ uniform float uGlobalLight;
 uniform vec3 uIceSun;
 uniform float uSunStrength;
 uniform float uIceFixedSun;
+uniform float uTruePhoto;
 varying vec3 vWorldNormal;
 varying vec3 vUp;
 varying float vDomain;
@@ -83,6 +86,13 @@ diffuseColor.a = 1.0;`,
         '#include <roughnessmap_fragment>',
         `#include <roughnessmap_fragment>
 roughnessFactor = mix(roughnessFactor, 0.14, clamp(vWater, 0.0, 1.0));`,
+      )
+      .replace(
+        '#include <tonemapping_fragment>',
+        `vec3 fwPreTone = gl_FragColor.rgb;
+#include <tonemapping_fragment>
+// TRUE PHOTO COLOURS: no film tone curve on the real-world photo (as on the globe).
+gl_FragColor.rgb = mix(gl_FragColor.rgb, fwPreTone, uTruePhoto * (1.0 - clamp(vDomain, 0.0, 1.0)));`,
       )
       .replace(
         '#include <opaque_fragment>',
@@ -108,6 +118,7 @@ roughnessFactor = mix(roughnessFactor, 0.14, clamp(vWater, 0.0, 1.0));`,
     vec3 lit = diffuseColor.rgb * (uSunStrength * pow(lambert, 0.5) + 0.35) * day + diffuseColor.rgb * 0.04;
     gl_FragColor.rgb = mix(gl_FragColor.rgb, lit, uGlobalLight);
   }
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, diffuseColor.rgb, uTruePhoto * (1.0 - clamp(vDomain, 0.0, 1.0)));
   // Night side: dim moonlit tint plus real city lights (Black Marble, stored in the map's alpha).
   vec3 night = gl_FragColor.rgb * vec3(0.55, 0.65, 1.0) * uNightLevel;
   // Close up (uNightLights < 1), the ~500 m Black Marble glow is shaped by the daytime imagery so

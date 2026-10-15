@@ -135,7 +135,46 @@ export class FlatWorldView {
     const h = this.host.clientHeight || window.innerHeight;
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
+    // The globe's field of view (Cesium: 60° across the wider side), so the same altitude shows
+    // the same ground scale in both views.
+    const half = Math.tan(Math.PI / 6);
+    this.camera.fov =
+      (2 * Math.atan(w >= h ? half / (w / h) : half) * 180) / Math.PI;
     this.camera.updateProjectionMatrix();
+  }
+
+  /**
+   * Smooth mode's frame-time governor: when frames run slow (a Retina screen in Safari, a weak
+   * GPU), step the pixel ratio and terrain detail down; step back up when there is headroom.
+   */
+  _governQuality(dt) {
+    if (!this.autoQuality) return;
+    const ms = dt * 1000;
+    this._ema = this._ema === undefined ? ms : this._ema * 0.95 + ms * 0.05;
+    const now = performance.now();
+    if (now - (this._qualityAt || 0) < 1500) return;
+    const cap = this.pixelRatioCap || 1.5;
+    const pr = this.renderer.getPixelRatio();
+    if (this._ema > 28) {
+      this._qualityAt = now;
+      if (pr > 1) {
+        this.renderer.setPixelRatio(Math.max(1, pr - 0.25));
+        this.resize();
+      } else if (this.chunks.pixelTolerance < 1.6) {
+        this.chunks.pixelTolerance += 0.2;
+      }
+    } else if (this._ema < 15 && now - (this._qualityAt || 0) > 6000) {
+      this._qualityAt = now;
+      if (this.chunks.pixelTolerance > (this.basePixelTolerance ?? 1.25)) {
+        this.chunks.pixelTolerance = Math.max(
+          this.basePixelTolerance ?? 1.25,
+          this.chunks.pixelTolerance - 0.2,
+        );
+      } else if (pr < Math.min(window.devicePixelRatio || 1, cap)) {
+        this.renderer.setPixelRatio(Math.min(pr + 0.25, cap));
+        this.resize();
+      }
+    }
   }
 
   addLayer(layer) {
@@ -405,7 +444,9 @@ export class FlatWorldView {
     if (!this.active) return;
     this._rafId = requestAnimationFrame(this._loop);
     const t0 = performance.now();
-    const dt = Math.min(this.clock.getDelta(), 0.1);
+    const rawDt = this.clock.getDelta();
+    const dt = Math.min(rawDt, 0.1);
+    this._governQuality(Math.min(rawDt, 0.5));
     this.controls.update(dt);
     const g =
       this.chunks.heightAt(this.camera.position.x, -this.camera.position.z) ??
