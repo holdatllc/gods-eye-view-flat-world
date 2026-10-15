@@ -86,11 +86,15 @@ export class LiveLabels {
    * @param {(rec: object) => {title: string, lines: string[], accent?: string}} options.describe
    *   Card text for a record (the globe's own readout text where available).
    * @param {() => void} options.onClose Called when the card's close button is pressed.
+   * @param {(rec: object) => Array<{label: string, title?: string, onClick: () => void}>} [options.actions]
+   *   Extra card buttons for a record (fly to, cockpit, flight path).
    */
-  constructor({ live, describe, onClose }) {
+  constructor({ live, describe, onClose, actions = () => [] }) {
     this.live = live;
     this.describe = describe;
     this.onClose = onClose;
+    this.actions = actions;
+    this.note = '';
     this.enabled = true;
     this.hovered = null;
     this.index = new ScreenIndex();
@@ -115,12 +119,16 @@ export class LiveLabels {
       '<div class="fw-card-head"><span class="fw-card-title"></span>' +
       '<button type="button" class="fw-card-x" aria-label="Close">✕</button></div>' +
       '<div class="fw-card-body"></div>' +
-      '<div class="fw-card-actions"><button type="button" class="fw-card-follow"></button></div>';
+      '<div class="fw-card-actions"><button type="button" class="fw-card-follow"></button></div>' +
+      '<div class="fw-card-note" hidden></div>';
     view.host.appendChild(this.card);
     this.card
       .querySelector('.fw-card-x')
       .addEventListener('click', () => this.onClose?.());
     this.followBtn = this.card.querySelector('.fw-card-follow');
+    this.actionsEl = this.card.querySelector('.fw-card-actions');
+    this.noteEl = this.card.querySelector('.fw-card-note');
+    this.extraSignature = '';
     this.followBtn.addEventListener('click', () => {
       if (this.live.following) this.live.releaseFollow();
       else this.live.follow();
@@ -135,7 +143,11 @@ export class LiveLabels {
   nearest(clientX, clientY, radiusPx = 14) {
     if (!this.view) return null;
     const rect = this.view.canvas.getBoundingClientRect();
-    return this.index.nearest(clientX - rect.left, clientY - rect.top, radiusPx);
+    return this.index.nearest(
+      clientX - rect.left,
+      clientY - rect.top,
+      radiusPx,
+    );
   }
 
   setHover(rec) {
@@ -198,7 +210,9 @@ export class LiveLabels {
     for (let i = 0; i < n; i++) order[i] = i;
     const pri = new Float64Array(n);
     for (let i = 0; i < n; i++) pri[i] = this._priority(this.index.recs[i]);
-    order.sort((a, b) => pri[b] - pri[a] || this.index.ds[a] - this.index.ds[b]);
+    order.sort(
+      (a, b) => pri[b] - pri[a] || this.index.ds[a] - this.index.ds[b],
+    );
     const maxLabels = Math.min(
       260,
       Math.max(40, Math.round((this.cssW * this.cssH) / 7000)),
@@ -215,7 +229,12 @@ export class LiveLabels {
           const list = grid.get(cx * 100003 + cy);
           if (!list) continue;
           for (const b of list)
-            if (x < b[0] + b[2] && x + w > b[0] && y < b[1] + b[3] && y + h > b[1])
+            if (
+              x < b[0] + b[2] &&
+              x + w > b[0] &&
+              y < b[1] + b[3] &&
+              y + h > b[1]
+            )
               return true;
         }
       return false;
@@ -359,9 +378,12 @@ export class LiveLabels {
     this.cardTextAt = now;
     const d = this.describe(rec) || { title: rec.label, lines: [] };
     this.card.style.setProperty('--fw-accent', d.accent || this._color(rec));
-    this.card.querySelector('.fw-card-title').textContent = d.title || rec.label;
+    this.card.querySelector('.fw-card-title').textContent =
+      d.title || rec.label;
     const fix = rec.fixes?.[rec.fixes.length - 1];
-    const ageS = rec.lastFixMs ? Math.round((now - rec.lastFixMs) / 1000) : null;
+    const ageS = rec.lastFixMs
+      ? Math.round((now - rec.lastFixMs) / 1000)
+      : null;
     const lat = rec.lat;
     const lon = rec.lon;
     const position = `${Math.abs(lat).toFixed(4)}°${lat >= 0 ? 'N' : 'S'} ${Math.abs(lon).toFixed(4)}°${lon >= 0 ? 'E' : 'W'}`;
@@ -371,9 +393,56 @@ export class LiveLabels {
       `${rec.source || 'live feed'}${ageS === null || !fix ? '' : ` · fix ${ageS} s ago`}`,
     ];
     this.card.querySelector('.fw-card-body').innerHTML = lines
-      .map((l, i) => `<div class="fw-card-line${i >= lines.length - 2 ? ' dim' : ''}">${escapeHtml(l)}</div>`)
+      .map(
+        (l, i) =>
+          `<div class="fw-card-line${i >= lines.length - 2 ? ' dim' : ''}">${escapeHtml(l)}</div>`,
+      )
       .join('');
-    this.followBtn.textContent = this.live.following ? 'STOP FOLLOWING' : 'FOLLOW';
+    this.followBtn.textContent = this.live.following
+      ? 'STOP FOLLOWING'
+      : 'FOLLOW';
+    this._renderActions(rec);
+  }
+
+  /** A short status line under the buttons (e.g. why the cockpit could not open). */
+  setNote(text) {
+    this.note = text || '';
+    this.noteFor = this._trackedRec()?.id ?? null;
+    this._renderCardText(true);
+  }
+
+  _renderActions(rec) {
+    let extra = [];
+    try {
+      extra = this.actions(rec) || [];
+    } catch {
+      extra = [];
+    }
+    const signature = extra.map((a) => a.label).join('|');
+    if (signature !== this.extraSignature) {
+      this.extraSignature = signature;
+      for (const b of [...this.actionsEl.querySelectorAll('.fw-card-extra')])
+        b.remove();
+      this.extraHandlers = extra.map((a) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'fw-card-follow fw-card-extra';
+        b.textContent = a.label;
+        if (a.title) b.title = a.title;
+        this.actionsEl.append(b);
+        const entry = { button: b, action: a };
+        b.addEventListener('click', () => {
+          entry.action.onClick();
+          this._renderCardText(true);
+        });
+        return entry;
+      });
+    } else {
+      this.extraHandlers?.forEach((h, i) => (h.action = extra[i]));
+    }
+    const note = rec.id === this.noteFor ? this.note : '';
+    this.noteEl.hidden = !note;
+    this.noteEl.textContent = note;
   }
 
   _updateCard(pos) {

@@ -55,6 +55,7 @@ export function createPanel({
   toggle,
   selection,
   labels,
+  flightPath = null,
 }) {
   const panel = el('div', {
     class: 'fw-panel',
@@ -414,19 +415,33 @@ export function createPanel({
     },
     true,
   );
-  const allSatsBtn = button('ALL SATELLITES', () =>
-    live.setSatelliteCatalog(
-      live.satelliteCatalog() === 'dense' ? 'core' : 'dense',
-    ),
-  );
+  const allSatsBtn = button('ALL SATELLITES', () => {
+    const next = live.satelliteCatalog() === 'dense' ? 'core' : 'dense';
+    // Remembered so the flat world's all-satellites default does not switch it straight back.
+    live.satelliteUserCatalog = next;
+    live.setSatelliteCatalog(next);
+  });
   allSatsBtn.title =
     'On: every tracked satellite including the Starlink shell (~11,500). Off: the ~830 main satellites (the globe default).';
   const layerStatus = el('div', { class: 'fw-note fw-warn' });
   const trackedBox = el('div', { class: 'fw-kv' });
+  const flightPathBtn = button(
+    'FLIGHT PATH',
+    () => {
+      flightPath?.setEnabled(!flightPath.enabled);
+      flightPathBtn.classList.toggle('on', Boolean(flightPath?.enabled));
+    },
+    Boolean(flightPath?.enabled),
+  );
+  flightPathBtn.title =
+    "Selected aircraft: draw its route between origin and destination airports, both ways — the globe's great circle (cyan) and the flat map's straight line (amber), each labelled with its length.";
+  const flightPathNote = el('div', { class: 'fw-note' });
   layers.append(
     layerRow,
     el('div', { class: 'fw-row' }, namesBtn, allSatsBtn),
     el('div', { class: 'fw-row' }, satGroundBtn),
+    el('div', { class: 'fw-row' }, flightPathBtn),
+    flightPathNote,
     layerStatus,
     el(
       'div',
@@ -441,6 +456,9 @@ export function createPanel({
     if (!rec) trackedBox.replaceChildren();
   };
   function renderTracked() {
+    const fpText = flightPath?.enabled ? flightPath.status : '';
+    if (flightPathNote.textContent !== fpText)
+      flightPathNote.textContent = fpText;
     if (!trackedRec || !live.tracked) return;
     const r = trackedRec;
     const fix = r.fixes?.[r.fixes.length - 1];

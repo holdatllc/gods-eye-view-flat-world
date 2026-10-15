@@ -28,6 +28,8 @@ import { installLiveExtras } from './overlays/liveExtras.js';
 import { installStyles } from './ui/styles.js';
 import { createPanel } from './ui/panel.js';
 import { createLiveSelection } from './ui/liveSelection.js';
+import { createFlatCockpit } from './ui/flatCockpit.js';
+import { FlightPath } from './nav/flightPath.js';
 
 function createToggle() {
   const toggle = document.createElement('button');
@@ -100,28 +102,111 @@ export function mountFlatWorld({ viewer, dataManager }) {
     });
     // Selection goes through the globe's own layers (shared Context, readout, voice).
     const selection = createLiveSelection({ viewer, live, mode });
+    // The globe's cockpit, flown from the selected aircraft's seat in the flat world.
+    const cockpit = createFlatCockpit({ viewer, view, live, mode });
+    view.addLayer({ update: () => cockpit.update() });
+    mode.globeCameraHeld = () => cockpit.active();
+    // The selected flight's route: the globe's great circle and the flat map's straight line.
+    const flightPath = new FlightPath({ frame, live, selection });
+    view.addLayer(flightPath);
     // Flat mode shows every tracked satellite (~11,500, Starlink included) at true height by
-    // default; the globe's own lighter catalogue comes back on exit if we were the ones to switch.
+    // default: the layer is switched on, and the full catalogue applied whenever the layer is on
+    // (also when it is switched on later, from any control) unless ALL SATELLITES was switched
+    // off here. The globe's own catalogue and on/off state come back on exit.
     let globeSatCatalog = null;
+    let satsTurnedOn = false;
+    let satCheckAt = 0;
+    function applySatelliteDefault() {
+      if (!mode.active || !live.isLayerOn('satellites')) return;
+      if (live.satelliteUserCatalog === 'core') return;
+      const current = live.satelliteCatalog();
+      if (!current || current === 'dense') return;
+      globeSatCatalog ??= current;
+      live.setSatelliteCatalog('dense');
+    }
+    view.addLayer({
+      update: () => {
+        const now = performance.now();
+        if (now - satCheckAt < 1000) return;
+        satCheckAt = now;
+        applySatelliteDefault();
+      },
+    });
     mode.afterEnter = () => {
       selection.adoptGlobeTracking();
-      const current = live.satelliteCatalog();
-      if (live.isLayerOn('satellites') && current && current !== 'dense') {
-        globeSatCatalog = current;
-        live.setSatelliteCatalog('dense');
+      live.satelliteUserCatalog = null;
+      globeSatCatalog = null;
+      satsTurnedOn = false;
+      if (!live.isLayerOn('satellites')) {
+        live.toggleLayer('satellites');
+        satsTurnedOn = true;
       }
+      applySatelliteDefault();
     };
     mode.beforeExit = () => {
+      cockpit.beforeExit();
       selection.beforeExit();
       if (globeSatCatalog && live.satelliteCatalog() === 'dense')
         live.setSatelliteCatalog(globeSatCatalog);
+      if (satsTurnedOn && live.isLayerOn('satellites'))
+        live.toggleLayer('satellites');
       globeSatCatalog = null;
+      satsTurnedOn = false;
     };
     // Names, hover and click targets for every live object, and the selected object's card.
     const labels = new LiveLabels({
       live,
       describe: selection.describe,
       onClose: () => selection.deselect(),
+      actions: (rec) => {
+        const list = [
+          {
+            label: 'FLY TO',
+            title:
+              'Fly the camera to it and stop there (FOLLOW keeps the camera on it)',
+            onClick: () => {
+              const r = live._find(rec.kind, rec.id) || rec;
+              const w = frame.geodeticToWorld(r.lat, r.lon);
+              if (!w) return;
+              live.releaseFollow();
+              view.lookAtPlane({
+                x: w.x,
+                y: w.y,
+                range: Math.max(
+                  r.altitudeM * view.chunks.exaggeration * 3,
+                  6000,
+                ),
+                pitch: 0.6,
+                animate: true,
+              });
+            },
+          },
+        ];
+        if (cockpit.isAircraft(rec)) {
+          list.push({
+            label: 'COCKPIT',
+            title:
+              "Sit in this aircraft's cockpit (the globe's cockpit, over the flat world)",
+            onClick: () => {
+              labels.setNote('Opening the cockpit…');
+              cockpit
+                .enter(rec)
+                .then((res) =>
+                  labels.setNote(
+                    res.ok ? '' : res.error || 'The cockpit could not open',
+                  ),
+                );
+            },
+          });
+          list.push({
+            label: flightPath.enabled ? 'FLIGHT PATH: ON' : 'FLIGHT PATH: OFF',
+            title:
+              "Draw this flight's route: the globe's great circle and the flat map's straight line",
+            onClick: () => flightPath.setEnabled(!flightPath.enabled),
+          });
+        }
+        return list;
+      },
     });
     view.addLayer(labels);
     view.addLayer({ update: () => selection.update() });
@@ -142,6 +227,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
       toggle,
       selection,
       labels,
+      flightPath,
     });
 
     // Picking: a click selects the aircraft, ship or satellite nearest the cursor (every drawn
@@ -156,6 +242,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
     view.canvas.addEventListener('pointerup', (e) => {
       if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4)
         return;
+      if (cockpit.active()) return;
       if (routes.measuring) {
         const p = view.pick(e.clientX, e.clientY);
         if (p) routes.addPoint(p);
@@ -196,7 +283,12 @@ export function mountFlatWorld({ viewer, dataManager }) {
     view.canvas.addEventListener('pointerleave', () => labels.setHover(null));
     // Esc deselects (the globe's own layers also clear their tracking on Esc).
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && mode.active && live.tracked)
+      if (
+        e.key === 'Escape' &&
+        mode.active &&
+        live.tracked &&
+        !cockpit.active()
+      )
         selection.deselect();
     });
 
@@ -214,6 +306,8 @@ export function mountFlatWorld({ viewer, dataManager }) {
       wall,
       frame,
       panel,
+      cockpit,
+      flightPath,
     };
     Object.assign(api, world, {
       diagnostics: () => view.diagnostics(),

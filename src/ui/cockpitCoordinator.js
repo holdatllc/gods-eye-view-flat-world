@@ -97,6 +97,8 @@ export class CockpitCoordinator {
         return false;
       },
     });
+    // The flat world (a separate three.js scene) drives this same cockpit.
+    viewer.gevCockpit = this;
   }
   get _dataManager() {
     return this.readDataManager();

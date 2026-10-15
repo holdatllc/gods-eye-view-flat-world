@@ -149,7 +149,10 @@ export function createLiveSelection({ viewer, live, mode }) {
     const kind = Object.keys(GLOBE_PREFIX).find(
       (k) => GLOBE_PREFIX[k] === prefix,
     );
-    adopt = kind && rest.length ? { kind, id: rest.join(':'), since: Date.now() } : null;
+    adopt =
+      kind && rest.length
+        ? { kind, id: rest.join(':'), since: Date.now() }
+        : null;
   }
   /** Per-frame: start following the adopted object once its first fix has arrived. */
   function update() {
@@ -163,6 +166,43 @@ export function createLiveSelection({ viewer, live, mode }) {
       adopt = null;
     }
   }
+
+  /**
+   * While the flat world is shown, selections made elsewhere — Contacts PREVIOUS / FOCUS / NEXT,
+   * the cockpit's context window, voice — move the flat world's selection (and camera) too.
+   */
+  const KIND_OF_LAYER = {
+    flights: 'flights',
+    military: 'military',
+    satellites: 'satellites',
+    'ais-live-vessels': 'vessels',
+  };
+  const findLive = (kind, id) =>
+    live._find(kind, id) ?? live._find(kind, String(id)) ?? null;
+  function onGlobeSelected(event) {
+    if (!mode.active) return;
+    const d = event?.detail || {};
+    const kind = KIND_OF_LAYER[d.layerId];
+    const rawId = d.id ?? d.mmsi;
+    if (!kind || rawId == null) return;
+    const t = live.tracked;
+    if (t && t.kind === kind && String(t.id) === String(rawId)) return;
+    const rec = findLive(kind, rawId);
+    if (rec) live.track(kind, rec.id);
+    else adopt = { kind, id: String(rawId), since: Date.now() };
+    mode.markGlobeSynced?.();
+  }
+  function onGlobeCleared(event) {
+    if (!mode.active) return;
+    const d = event?.detail || {};
+    const t = live.tracked;
+    if (!t || KIND_OF_LAYER[d.layerId] !== t.kind) return;
+    if (d.id != null && String(d.id) !== String(t.id)) return;
+    live.stopTracking();
+  }
+  window.addEventListener('gev:awareness-subject-selected', onGlobeSelected);
+  window.addEventListener('gev:entity-selected', onGlobeSelected);
+  window.addEventListener('gev:awareness-subject-cleared', onGlobeCleared);
 
   /**
    * Before leaving: an object still followed stays followed on the globe; a selection the user

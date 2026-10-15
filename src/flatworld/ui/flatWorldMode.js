@@ -126,6 +126,11 @@ export class FlatWorldMode {
    */
   followGlobeRequests() {
     if (!this.active) return;
+    // Something in the flat world owns the hidden camera (the cockpit): nothing to follow.
+    if (this.globeCameraHeld?.()) {
+      this.markGlobeSynced();
+      return;
+    }
     const camera = this.viewer.camera;
     if (camera._currentFlight) camera.completeFlight();
     const p = camera.positionWC;
@@ -147,6 +152,7 @@ export class FlatWorldMode {
 
   /** Keep the hidden globe camera over the flat-world focus so live feeds query this region. */
   syncHiddenGlobe() {
+    if (this.globeCameraHeld?.()) return;
     const f = this.view.focus;
     if (!f || f.domain.domain !== DOMAIN_GPS) return;
     const height = Math.min(Math.max(f.altitude, 2000), 2.0e7);

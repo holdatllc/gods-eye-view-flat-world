@@ -9,8 +9,28 @@ body.flatworld-active #cesium-credits,
 body.flatworld-active #safe-frame-overlay,
 body.flatworld-active #cockpit-cloud-effects,
 body.flatworld-active #first-run-launcher,
-body.flatworld-active #cockpit-hud,
 body.flatworld-active #intel-hud { display: none !important; }
+/* The cockpit HUD shows in the flat world only while the cockpit is open (flown by flatCockpit.js). */
+body.flatworld-active:not(.cockpit-mode) #cockpit-hud { display: none !important; }
+body.flatworld-active.cockpit-mode .fw-panel,
+body.flatworld-active.cockpit-mode .fw-card,
+body.flatworld-active.cockpit-mode .fw-route-labels,
+body.flatworld-active.cockpit-mode .fw-sky-panel,
+body.flatworld-active.cockpit-mode .fw-sky-corner,
+body.flatworld-active.cockpit-mode .fw-sky-cards,
+body.flatworld-active.cockpit-mode .fw-wall-label,
+body.flatworld-active.cockpit-mode .fw-credits { display: none !important; }
+/* Flight-path labels (great circle vs flat straight line). */
+.fw-route-labels { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 3; }
+body:not(.flatworld-active) .fw-route-labels { display: none; }
+.fw-route-label { position: absolute; left: 0; top: 0; white-space: nowrap; margin: -9px 0 0 8px;
+  font: 600 10px ui-monospace, 'SF Mono', Menlo, monospace; letter-spacing: 0.06em; padding: 2px 6px; border-radius: 3px;
+  background: rgba(4, 14, 20, 0.82); color: #fff; border: 1px solid rgba(255, 255, 255, 0.3); }
+.fw-route-label.geo { color: #bff4ff; border-color: #39e1ff; }
+.fw-route-label.flat { color: #ffe2a8; border-color: #ffc14d; }
+.fw-card-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.fw-card-note { margin-top: 5px; color: #ffcf7a; font-size: 10px; }
+.fw-card-note[hidden] { display: none; }
 /* Names of live objects (canvas) and the selected object's card. */
 .fw-live-labels { position: absolute; left: 0; top: 0; pointer-events: none; }
 body:not(.flatworld-active) .fw-live-labels, body:not(.flatworld-active) .fw-card { display: none; }
