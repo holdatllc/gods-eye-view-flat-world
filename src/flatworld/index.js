@@ -107,6 +107,13 @@ export function mountFlatWorld({ viewer, dataManager }) {
     // The globe's cockpit, flown from the selected aircraft's seat in the flat world.
     const cockpit = createFlatCockpit({ viewer, view, live, mode });
     view.addLayer({ update: () => cockpit.update() });
+    // Always-visible way out of the cockpit, back to the flat map (Esc does the same).
+    const cockpitExit = document.createElement('button');
+    cockpitExit.type = 'button';
+    cockpitExit.className = 'fw-cockpit-exit';
+    cockpitExit.textContent = '✕ EXIT COCKPIT';
+    cockpitExit.addEventListener('click', () => cockpit.exit());
+    document.body.appendChild(cockpitExit);
     mode.globeCameraHeld = () => cockpit.active();
     // The selected flight's route: the globe's great circle and the flat map's straight line.
     const flightPath = new FlightPath({ frame, live, selection });
@@ -308,6 +315,10 @@ export function mountFlatWorld({ viewer, dataManager }) {
     view.canvas.addEventListener('pointerleave', () => labels.setHover(null));
     // Esc deselects (the globe's own layers also clear their tracking on Esc).
     window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && cockpit.active()) {
+        cockpit.exit();
+        return;
+      }
       if (
         e.key === 'Escape' &&
         mode.active &&
