@@ -39,7 +39,11 @@ void main() {
   vAngle = atan(d.x, d.y);
   vColor = aColor;
   gl_Position = c0;
-  gl_PointSize = aSize * uPixelRatio;
+  // The globe's fleet billboard scale by distance: NearFarScalar(1 km, 3.0, 8,000 km, 0.5),
+  // interpolated as Cesium does (pow 0.2).
+  float t = pow(clamp((length(mv.xyz) - 1000.0) / (8.0e6 - 1000.0), 0.0, 1.0), 0.2);
+  float scale = mix(3.0, 0.5, t);
+  gl_PointSize = aSize * scale * uPixelRatio;
 }
 `;
 
@@ -51,7 +55,8 @@ void main() {
   vec2 q = vec2(gl_PointCoord.x - 0.5, 0.5 - gl_PointCoord.y);
   float c = cos(vAngle);
   float s = sin(vAngle);
-  vec2 src = vec2(c * q.x + s * q.y, -s * q.x + c * q.y);
+  // Turn the nose-up glyph clockwise by vAngle (screen heading measured clockwise from up).
+  vec2 src = vec2(c * q.x - s * q.y, s * q.x + c * q.y);
   if (abs(src.x) > 0.5 || abs(src.y) > 0.5) discard;
   vec4 icon = texture2D(uIcon, src + 0.5);
   // Soft shadow under the glyph, as the globe's billboards read against imagery.

@@ -157,10 +157,14 @@ export class LiveLabels {
   _labelText(rec) {
     const name = String(rec.label || rec.id || '').slice(0, 28);
     // Aircraft read as on the globe: callsign and flight level ("AAL299 FL390").
+    // Globe wording: flight level from FL180 up, feet below it, nothing on the ground.
     if (rec.kind === 'flights' || rec.kind === 'military') {
-      if (rec.onGround) return `${name} GND`;
-      if (Number.isFinite(rec.altitudeM))
-        return `${name} FL${String(Math.max(0, Math.round((rec.altitudeM * 3.28084) / 100))).padStart(3, '0')}`;
+      if (rec.onGround || !Number.isFinite(rec.altitudeM) || rec.altitudeM <= 0)
+        return name;
+      const ft = Math.round(rec.altitudeM * 3.28084);
+      return ft >= 18000
+        ? `${name} FL${String(Math.round(ft / 100)).padStart(3, '0')}`
+        : `${name} ${ft} ft`;
     }
     return name;
   }

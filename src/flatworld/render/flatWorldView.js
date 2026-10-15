@@ -163,7 +163,8 @@ export class FlatWorldView {
       } else if (this.chunks.pixelTolerance < 1.6) {
         this.chunks.pixelTolerance += 0.2;
       }
-    } else if (this._ema < 15 && now - (this._qualityAt || 0) > 6000) {
+    } else if (this._ema < 20 && now - (this._qualityAt || 0) > 3000) {
+      // Running at ~50 fps or better for 3 s: step quality back up.
       this._qualityAt = now;
       if (this.chunks.pixelTolerance > (this.basePixelTolerance ?? 1.25)) {
         this.chunks.pixelTolerance = Math.max(

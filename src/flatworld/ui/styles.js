@@ -44,6 +44,10 @@ body.flatworld-active.cockpit-mode .fw-toggle { display: flex; top: 60px; z-inde
 /* Scope vignette over the flat canvas (same keyhole as the globe's #scope-mask). */
 .fw-scope { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 1; }
 body:not(.flatworld-active) .fw-scope, body.cockpit-mode .fw-scope { display: none; }
+/* The sky panel, its corner note and cards belong to the flat world only. */
+body:not(.flatworld-active) .fw-sky-panel,
+body:not(.flatworld-active) .fw-sky-corner,
+body:not(.flatworld-active) .fw-sky-cards { display: none !important; }
 /* Flight-path labels (great circle vs flat straight line). */
 .fw-route-labels { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 3; }
 body:not(.flatworld-active) .fw-route-labels { display: none; }

@@ -11,6 +11,10 @@ import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { RouteLayer } from './routeLayer.js';
+import { routePlausible } from '../../data/routePlausible.js';
+import { TRAIL_COLOR, TRAIL_MAX_POINTS } from '../../layers/flights/policy.js';
+
+const MILITARY_TRAIL = 0xffb800;
 
 const AIRCRAFT = new Set(['flights', 'military']);
 
@@ -49,11 +53,12 @@ export class FlightPath {
     this.trail = { id: null, points: [] };
     this.trailLine = new Line2(
       new LineGeometry(),
+      // The globe's trail: cyan #00d4ff (amber for military), 2.5 px, 85 % opacity.
       new LineMaterial({
-        color: 0x7dff9b,
-        linewidth: 3,
+        color: new THREE.Color(TRAIL_COLOR),
+        linewidth: 2.5,
         transparent: true,
-        opacity: 0.95,
+        opacity: 0.85,
         depthTest: false,
       }),
     );
@@ -106,6 +111,25 @@ export class FlightPath {
       return { tracked: true, pending: true };
     if (looked && looked !== 'pending')
       ({ origin, destination, stops } = looked);
+    // Test hook: a route forced onto the selected plane (see forceRoute).
+    if (this.forced?.key === `${t.kind}:${t.id}`)
+      ({ origin, destination, stops } = this.forced.route);
+    // The globe's plausibility check: a route the plane is not plausibly flying (wrong leg of a
+    // reused callsign) is not drawn. With stops, plausible on any leg counts.
+    else if (origin && destination && rec) {
+      const pts = [origin, ...(stops || []), destination];
+      let ok = false;
+      for (let i = 0; i < pts.length - 1 && !ok; i++)
+        ok = routePlausible({
+          latDeg: rec.lat,
+          lonDeg: rec.lon,
+          altitudeM: rec.altitudeM ?? null,
+          verticalRateMps: rec.verticalRateMps ?? null,
+          origin: pts[i],
+          destination: pts[i + 1],
+        });
+      if (!ok) return { tracked: true, implausible: true };
+    }
     return {
       tracked: true,
       callsign: info?.callsign || '',
@@ -135,6 +159,28 @@ export class FlightPath {
       .catch(() => this.cache.set(callsign, null))
       .finally(() => (this.checkTimer = 1));
     return 'pending';
+  }
+
+  /**
+   * Test hook: draw `route` ({origin, destination, stops}, each {lat, lon, code, name}) for the
+   * selected plane, e.g. window.__flatWorld.flightPath.forceRoute(await (await
+   * fetch('/api/adsbdb/route/QFA9')).json()). forceRoute(null) clears it.
+   */
+  forceRoute(route) {
+    const t = this.live.tracked;
+    this.forced =
+      route && t
+        ? {
+            key: `${t.kind}:${t.id}`,
+            route: {
+              origin: airport(route.origin),
+              destination: airport(route.destination),
+              stops: (route.stops || []).map(airport).filter(Boolean),
+            },
+          }
+        : null;
+    this.key = '';
+    this.checkTimer = 1;
   }
 
   _clear(status) {
@@ -174,6 +220,14 @@ export class FlightPath {
     if (!r.tracked) {
       if (this.key) this._clear('');
       this.key = '';
+      return;
+    }
+    if (r.implausible) {
+      if (this.key !== 'implausible')
+        this._clear(
+          'The route database lists a route this plane is not plausibly flying (the globe hides it too). Green: the track it has flown.',
+        );
+      this.key = 'implausible';
       return;
     }
     if (r.pending) {
@@ -236,6 +290,9 @@ export class FlightPath {
     const key = rec ? `${t.kind}:${t.id}` : null;
     if (key !== this.trail.id) {
       this.trail = { id: key, points: [], at: 0, history: [] };
+      this.trailLine.material.color.set(
+        t?.kind === 'military' ? MILITARY_TRAIL : TRAIL_COLOR,
+      );
       if (rec) this._fetchHistory(t.kind, t.id, key);
     }
     if (!rec?.drawn) {
@@ -251,12 +308,22 @@ export class FlightPath {
     ) {
       pts.push(rec.drawn.clone());
       this.trail.at = now;
-      if (pts.length > 2000) pts.shift();
+      if (pts.length > TRAIL_MAX_POINTS) pts.shift();
     }
     if (pts.length < 1) return;
     // The flown track from takeoff (the same history the globe draws), then the positions seen
     // since selection, ending at the plane. Camera-relative (float32 on the GPU).
-    const all = [...this._historyPoints(view), ...pts];
+    // At most TRAIL_MAX_POINTS vertices in all, as the globe: the history is thinned to fit.
+    let hist = this._historyPoints(view);
+    const room = Math.max(TRAIL_MAX_POINTS - pts.length, 2);
+    if (hist.length > room) {
+      const step = hist.length / room;
+      const thin = [];
+      for (let i = 0; i < room; i++) thin.push(hist[Math.floor(i * step)]);
+      thin[thin.length - 1] = hist[hist.length - 1];
+      hist = thin;
+    }
+    const all = [...hist, ...pts];
     const o = all[0];
     const arr = new Float32Array((all.length + 1) * 3);
     all.forEach((p, i) => arr.set([p.x - o.x, p.y - o.y, p.z - o.z], i * 3));
@@ -319,13 +386,25 @@ export class FlightPath {
     const h = this.trail.history;
     if (!h?.length) return [];
     const e = view.chunks.exaggeration;
-    if (this.trail.historyBuilt?.e === e) return this.trail.historyBuilt.pts;
+    // Rebuilt every few seconds as finer terrain (the floor) loads.
+    const hb = this.trail.historyBuilt;
+    if (hb?.e === e && performance.now() - hb.at < 5000) return hb.pts;
     const pts = [];
     for (const w of h) {
       const p = this.frame.geodeticToWorld(w.lat, w.lon);
-      if (p) pts.push(new THREE.Vector3(p.x, Math.max(w.altM, 0) * e, -p.y));
+      // Heights are above sea level here (no geoid step needed in the flat frame), floored at
+      // the rendered terrain so a low or missing barometric altitude never dives underground.
+      const ground = p ? (view.chunks.heightAt(p.x, p.y) ?? 0) : 0;
+      if (p)
+        pts.push(
+          new THREE.Vector3(
+            p.x,
+            Math.max(Math.max(w.altM, 0) * e, ground + 5),
+            -p.y,
+          ),
+        );
     }
-    this.trail.historyBuilt = { e, pts };
+    this.trail.historyBuilt = { e, pts, at: performance.now() };
     return pts;
   }
 
