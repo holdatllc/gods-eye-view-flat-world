@@ -59,6 +59,7 @@ export function createPanel({
   globeMarkers = null,
   presets = null,
   planeIcons = null,
+  planeModels = null,
 }) {
   /** Smooth mode: satellites re-placed 10×/s and a lighter pixel ratio on high-DPI screens. */
   function applySmooth(on) {
@@ -569,6 +570,16 @@ export function createPanel({
   );
   planeIconsBtn.title =
     "On: aircraft drawn with the globe's white plane icons turned to their heading (amber military, cyan selected), labelled with callsign and flight level. Off: the flat world's 3D plane shapes.";
+  const planeModelsBtn = button(
+    '3D PLANE MODELS',
+    () => {
+      planeModels?.setEnabled(!planeModels.enabled);
+      planeModelsBtn.classList.toggle('on', Boolean(planeModels?.enabled));
+    },
+    true,
+  );
+  planeModelsBtn.title =
+    "On: as on the globe, the nearest planes (up to 150, within 150 km, below 800 km camera height) are drawn as the globe's 3D airliner model instead of an icon.";
   const deadReckonBtn = button(
     'MOVE BETWEEN UPDATES',
     () => {
@@ -629,7 +640,7 @@ export function createPanel({
     el('div', { class: 'fw-row' }, presetsBtn, intelHudBtn),
     el('div', { class: 'fw-row' }, smoothBtn, satColoursBtn),
     el('div', { class: 'fw-row' }, deadReckonBtn),
-    el('div', { class: 'fw-row' }, planeIconsBtn),
+    el('div', { class: 'fw-row' }, planeIconsBtn, planeModelsBtn),
     flightPathNote,
     layerStatus,
     el(

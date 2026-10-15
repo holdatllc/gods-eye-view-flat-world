@@ -32,6 +32,7 @@ import { createFlatCockpit } from './ui/flatCockpit.js';
 import { FlightPath } from './nav/flightPath.js';
 import { GlobeEntityMirror } from './overlays/globeEntities.js';
 import { AircraftSprites } from './overlays/aircraftSprites.js';
+import { AircraftModels } from './overlays/aircraftModels.js';
 import { createFlatPresets } from './ui/flatPresets.js';
 import { createFlatScope } from './ui/flatScope.js';
 
@@ -81,6 +82,9 @@ export function mountFlatWorld({ viewer, dataManager }) {
     const live = new LiveOverlay({ dataManager, frame });
     view.addLayer(live);
     // The globe's aircraft icons (white silhouettes, amber military, cyan selected).
+    // Close in, the nearest planes as the globe's 3D model instead of icons.
+    const planeModels = new AircraftModels({ live });
+    view.addLayer(planeModels);
     const planeIcons = new AircraftSprites({ live });
     view.addLayer(planeIcons);
     const vectors = new VectorLines({ frame });
@@ -299,6 +303,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
       globeMarkers,
       presets,
       planeIcons,
+      planeModels,
     });
 
     // Picking: a click selects the aircraft, ship or satellite nearest the cursor (every drawn
@@ -389,6 +394,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
       presets,
       scope,
       planeIcons,
+      planeModels,
     };
     Object.assign(api, world, {
       diagnostics: () => view.diagnostics(),

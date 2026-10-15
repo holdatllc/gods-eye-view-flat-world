@@ -154,7 +154,8 @@ export class AircraftSprites {
     for (const k of KINDS) {
       if (!live.enabled[k]) continue;
       for (const r of live.records[k] ?? []) {
-        if (!r.drawn || r.instance === undefined) continue;
+        // Planes drawn as 3D models (close in) have no icon, as on the globe.
+        if (!r.drawn || r.instance === undefined || r.modeled) continue;
         pos[i * 3] = r.drawn.x - origin.x;
         pos[i * 3 + 1] = r.drawn.y;
         pos[i * 3 + 2] = r.drawn.z - origin.z;
