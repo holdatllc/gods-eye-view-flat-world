@@ -193,7 +193,9 @@ export class FlightPath {
     this.result = res;
     this.ends = { origin: r.origin, destination: r.destination };
     const geo = res.geodesic?.distanceM;
-    this.status = `${r.origin.code || 'ORIGIN'} → ${r.destination.code || 'DESTINATION'} · globe ${km(geo)} · flat map ${km(res.flat.distanceM)}`;
+    // Real-world distances first; the map-scale length of the straight line is secondary.
+    const flown = res.flatPathOnEarth?.groundLengthM;
+    this.status = `${r.origin.code || 'ORIGIN'} → ${r.destination.code || 'DESTINATION'} · real shortest route ${km(geo)} (cyan) · straight on flat map ${km(flown)} real, ${km(res.flat.distanceM)} on map scale (amber)`;
     this._buildLabels();
   }
 
@@ -313,10 +315,10 @@ export class FlightPath {
         'end',
         `${destination.code || 'DESTINATION'}${destination.name ? ` · ${destination.name}` : ''}`,
       ),
-      mk('geo', `GLOBE ROUTE (great circle) · ${km(res.geodesic?.distanceM)}`),
+      mk('geo', `REAL SHORTEST ROUTE · ${km(res.geodesic?.distanceM)}`),
       mk(
         'flat',
-        `FLAT MAP STRAIGHT LINE · ${km(res.flat.distanceM)}${Number.isFinite(ground) ? ` (${km(ground)} on the globe)` : ''}`,
+        `STRAIGHT ON FLAT MAP · ${Number.isFinite(ground) ? `${km(ground)} real (${km(res.flat.distanceM)} on map scale)` : `${km(res.flat.distanceM)} on map scale`}`,
       ),
     ].join('');
   }
