@@ -221,12 +221,27 @@ void main() {
 `;
 
 const LABEL_CSS = `
-.fw-wall-label { position: absolute; left: 50%; transform: translateX(-50%); top: 150px; z-index: 2;
+.fw-wall-label { position: absolute; left: 0; top: 0; z-index: 2; width: max-content;
   max-width: min(640px, calc(100vw - 340px)); text-align: center; pointer-events: none;
   font: 10px/1.35 ui-monospace, 'SF Mono', Menlo, monospace; color: #bfe9f5; background: rgba(4, 14, 20, 0.62);
-  padding: 3px 9px; border-radius: 4px; }
+  padding: 3px 9px; border-radius: 4px; opacity: 0; visibility: hidden;
+  transition: opacity 0.18s, visibility 0s 0.18s; }
+.fw-wall-label[data-show='1'] { opacity: 1; visibility: visible; transition: opacity 0.18s; }
 body:not(.flatworld-active) .fw-wall-label { display: none; }
 `;
+
+// The label rides on the wall top, so it only exists while a wall point is actually drawn on screen.
+const TAU = Math.PI * 2;
+const MIN_RANGE_M = 300;
+const ARC_STEPS = [0.25, 0.5, 1, 2, 4, 8, 16, 32, 64]; // multiples of the camera range, both directions
+const REFINE_ITERATIONS = 14;
+const SCREEN_MARGIN = 1.1; // ndc: a wall point just past the screen edge still holds the label there
+const MIN_FOG_VISIBILITY = 0.1; // below this the wall is fogged out, so its label is too
+const NO_ANCHOR = 1e9;
+const LABEL_GAP_PX = 8;
+const EDGE_PX = 6;
+const GOLDEN = 0.6180339887498949;
+const _p = new THREE.Vector3();
 
 export class WallLayer {
   /** @param {{ frame: { boundaryRadius: number } }} opts */
@@ -238,6 +253,18 @@ export class WallLayer {
     this.label = null;
     this._labelText = '';
     this._labelExag = -1;
+    this._labelW = 0;
+    this._labelH = 0;
+    this._labelShown = false;
+    this._labelKey = '';
+    this._labelObserver = null;
+    this._arcs = [...ARC_STEPS].reverse().map((k) => -k).concat(0, ARC_STEPS);
+    this._ctx = { a0: 0, R: 0, circumference: 0, foot: 0, e: 1, fog: 0, cam: null };
+    this._ndcX = 0;
+    this._ndcY = 0;
+    this._best = NO_ANCHOR;
+    this._bx = 0;
+    this._by = 0;
     this._style = null;
     this.uniforms = {
       uExag: { value: 1 },
@@ -297,6 +324,11 @@ export class WallLayer {
     this.label = document.createElement('div');
     this.label.className = 'fw-wall-label';
     view.host.appendChild(this.label);
+    this._labelObserver = new ResizeObserver(() => {
+      this._labelW = this.label.offsetWidth;
+      this._labelH = this.label.offsetHeight;
+    });
+    this._labelObserver.observe(this.label);
   }
 
   update(dt, view) {
@@ -328,12 +360,123 @@ export class WallLayer {
         this.label.textContent = text;
       }
     }
+    this._placeLabel(view, R, foot, e, distance);
+  }
+
+  /** Score of the wall-top point `arc` metres along the rim from the point nearest the camera. */
+  _probe(arc) {
+    const c = this._ctx;
+    const a = c.a0 + arc / c.R;
+    const u = (((a / TAU) % 1) + 1) % 1;
+    const h = wallHeightM(u, c.circumference);
+    _p.set(c.R * Math.cos(a), c.foot + h * c.e, -c.R * Math.sin(a));
+    _p.applyMatrix4(c.cam.matrixWorldInverse);
+    const depth = -_p.z;
+    if (depth <= c.cam.near) return NO_ANCHOR;
+    if (Math.exp(-((depth * c.fog) ** 2)) < MIN_FOG_VISIBILITY) return NO_ANCHOR;
+    _p.applyMatrix4(c.cam.projectionMatrix);
+    if (Math.abs(_p.x) > SCREEN_MARGIN || Math.abs(_p.y) > SCREEN_MARGIN || Math.abs(_p.z) > 1) {
+      return NO_ANCHOR;
+    }
+    this._ndcX = _p.x;
+    this._ndcY = _p.y;
+    return _p.x * _p.x + _p.y * _p.y;
+  }
+
+  /** Probe `arc` and remember it when it is the closest-to-centre visible wall point so far. */
+  _probeBest(arc) {
+    const score = this._probe(arc);
+    if (score < this._best) {
+      this._best = score;
+      this._bx = this._ndcX;
+      this._by = this._ndcY;
+    }
+    return score;
+  }
+
+  /**
+   * Pin the label to the top of the wall at the on-screen point closest to the view centre, and hide
+   * it when no wall point is drawn (behind the camera, off screen, or lost in fog).
+   */
+  _placeLabel(view, R, foot, e, distance) {
+    const label = this.label;
+    if (!label) return;
+    const cam = view.camera;
+    cam.updateMatrixWorld();
+    const c = this._ctx;
+    c.a0 = Math.atan2(-cam.position.z, cam.position.x);
+    c.R = R;
+    c.circumference = TAU * R;
+    c.foot = foot;
+    c.e = e;
+    c.fog = view.scene.fog?.density ?? 0;
+    c.cam = cam;
+
+    const range = Math.max(distance, MIN_RANGE_M);
+    const limit = Math.PI * R;
+    const arcs = this._arcs;
+    this._best = NO_ANCHOR;
+    let bestIndex = -1;
+    for (let i = 0; i < arcs.length; i++) {
+      const arc = Math.max(-limit, Math.min(limit, arcs[i] * range));
+      const before = this._best;
+      this._probeBest(arc);
+      if (this._best < before) bestIndex = i;
+    }
+
+    if (bestIndex >= 0) {
+      // Slide along the rim between the neighbouring samples so the label follows the wall smoothly.
+      let lo = Math.max(-limit, arcs[Math.max(bestIndex - 1, 0)] * range);
+      let hi = Math.min(limit, arcs[Math.min(bestIndex + 1, arcs.length - 1)] * range);
+      let x1 = hi - GOLDEN * (hi - lo);
+      let x2 = lo + GOLDEN * (hi - lo);
+      let f1 = this._probeBest(x1);
+      let f2 = this._probeBest(x2);
+      for (let i = 0; i < REFINE_ITERATIONS; i++) {
+        if (f1 <= f2) {
+          hi = x2;
+          x2 = x1;
+          f2 = f1;
+          x1 = hi - GOLDEN * (hi - lo);
+          f1 = this._probeBest(x1);
+        } else {
+          lo = x1;
+          x1 = x2;
+          f1 = f2;
+          x2 = lo + GOLDEN * (hi - lo);
+          f2 = this._probeBest(x2);
+        }
+      }
+    }
+
+    const best = this._best;
+    const bx = this._bx;
+    const by = this._by;
+    const show = best < NO_ANCHOR;
+    if (show !== this._labelShown) {
+      this._labelShown = show;
+      label.dataset.show = show ? '1' : '0';
+    }
+    if (!show) return;
+
+    const w = view.canvas.clientWidth;
+    const h = view.canvas.clientHeight;
+    const lw = this._labelW;
+    const lh = this._labelH;
+    const x = Math.min(Math.max(((bx + 1) / 2) * w - lw / 2, EDGE_PX), Math.max(w - lw - EDGE_PX, EDGE_PX));
+    const y = Math.min(Math.max(((1 - by) / 2) * h - lh - LABEL_GAP_PX, EDGE_PX), Math.max(h - lh - EDGE_PX, EDGE_PX));
+    const key = `${Math.round(x * 4)},${Math.round(y * 4)}`;
+    if (key !== this._labelKey) {
+      this._labelKey = key;
+      label.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0)`;
+    }
   }
 
   destroy() {
     this.view?.scene.remove(this.group);
     for (const g of this._geometries ?? []) g.dispose();
     for (const m of this._materials ?? []) m.dispose();
+    this._labelObserver?.disconnect();
     this.label?.remove();
     this._style?.remove();
   }
