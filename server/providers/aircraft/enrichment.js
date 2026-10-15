@@ -43,6 +43,7 @@ export function adsbdbProxy() {
     if (!fr?.origin || !fr?.destination) return null;
     const airport = (a) => ({
       code: a.iata_code || a.icao_code || '',
+      icao: a.icao_code || '',
       name: a.municipality || a.name || '',
       lat: Number.isFinite(a.latitude) ? a.latitude : null,
       lon: Number.isFinite(a.longitude) ? a.longitude : null,
@@ -51,7 +52,61 @@ export function adsbdbProxy() {
       airline: fr.airline?.name || null,
       origin: airport(fr.origin),
       destination: airport(fr.destination),
+      // Intermediate (fuel / layover) stops, in order, when the route data lists any.
+      stops: fr.midpoint ? [airport(fr.midpoint)] : [],
+      v: 2,
     };
+  }
+
+  /**
+   * hexdb.io lists some multi-stop routes ("YSSY-WSSS-EGLL") that adsbdb gives as one leg.
+   * Used only when its first and last airports match adsbdb's, to add the stops between.
+   */
+  const hexAirports = new Map();
+  async function hexdbStops(callsign, route) {
+    try {
+      const res = await fetch(
+        `https://hexdb.io/callsign-route?callsign=${encodeURIComponent(callsign)}`,
+        { signal: AbortSignal.timeout(6000) },
+      );
+      if (!res.ok) return [];
+      const codes = (await res.text())
+        .trim()
+        .split('-')
+        .filter((c) => /^[A-Z0-9]{3,4}$/.test(c));
+      if (codes.length < 3) return [];
+      if (
+        codes[0] !== route.origin.icao ||
+        codes.at(-1) !== route.destination.icao
+      )
+        return [];
+      const stops = [];
+      for (const icao of codes.slice(1, -1)) {
+        let a = hexAirports.get(icao);
+        if (!a) {
+          const r = await fetch(
+            `https://hexdb.io/api/v1/airport/icao/${icao}`,
+            {
+              signal: AbortSignal.timeout(6000),
+            },
+          );
+          const j = r.ok ? await r.json() : null;
+          if (!Number.isFinite(j?.latitude)) return [];
+          a = {
+            code: j.iata || icao,
+            icao,
+            name: j.region_name || j.airport || '',
+            lat: j.latitude,
+            lon: j.longitude,
+          };
+          hexAirports.set(icao, a);
+        }
+        stops.push(a);
+      }
+      return stops;
+    } catch {
+      return [];
+    }
   }
 
   function parseAircraft(json) {
@@ -69,7 +124,12 @@ export function adsbdbProxy() {
 
   function lookup(kind, key) {
     const store = kind === 'route' ? cache.routes : cache.aircraft;
-    if (fresh(store[key])) return Promise.resolve(store[key].data);
+    // Route entries from before stops were recorded (v < 2) are looked up again.
+    if (
+      fresh(store[key]) &&
+      (kind !== 'route' || !store[key].data || store[key].data.v === 2)
+    )
+      return Promise.resolve(store[key].data);
     const ik = `${kind}:${key}`;
     if (!inflight.has(ik)) {
       inflight.set(
@@ -86,6 +146,8 @@ export function adsbdbProxy() {
                 kind === 'route'
                   ? parseRoute(await res.json())
                   : parseAircraft(await res.json());
+              if (kind === 'route' && data && !data.stops.length)
+                data.stops = await hexdbStops(key, data);
               store[key] = { at: Date.now(), data }; // data may be null — negative cache
               dirty = true;
               return data;

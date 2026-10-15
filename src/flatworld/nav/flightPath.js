@@ -36,6 +36,9 @@ export class FlightPath {
     this.live = live;
     this.selection = selection;
     this.routes = new RouteLayer({ frame });
+    // Further legs through fuel / layover stops (created as needed).
+    this.extraLegs = [];
+    this.legs = [];
     this.enabled = true;
     this.key = '';
     this.status = '';
@@ -91,24 +94,24 @@ export class FlightPath {
     }
     let origin = airport(info?.route?.origin);
     let destination = airport(info?.route?.destination);
-    // The globe's own lookup only runs for its tracked plane and only after a while; ask the
-    // app's route endpoint (adsbdb, keyless) directly by callsign, once per callsign.
-    if (!origin || !destination) {
-      const rec = this.live._find(t.kind, t.id);
-      const callsign = String(
-        info?.callsign || rec?.callsign || rec?.label || '',
-      )
-        .trim()
-        .toUpperCase();
-      const looked = callsign ? this._lookup(callsign) : null;
-      if (looked === 'pending') return { tracked: true, pending: true };
-      if (looked) ({ origin, destination } = looked);
-    }
+    let stops = [];
+    // The app's route endpoint by callsign (adsbdb + hexdb, keyless, cached on the server): it
+    // also lists fuel / layover stops, which the globe's own route record does not carry.
+    const rec = this.live._find(t.kind, t.id);
+    const callsign = String(info?.callsign || rec?.callsign || rec?.label || '')
+      .trim()
+      .toUpperCase();
+    const looked = callsign ? this._lookup(callsign) : null;
+    if (looked === 'pending' && (!origin || !destination))
+      return { tracked: true, pending: true };
+    if (looked && looked !== 'pending')
+      ({ origin, destination, stops } = looked);
     return {
       tracked: true,
       callsign: info?.callsign || '',
       origin,
       destination,
+      stops: stops || [],
     };
   }
 
@@ -123,9 +126,10 @@ export class FlightPath {
       .then((j) => {
         const o = airport(j?.origin);
         const d = airport(j?.destination);
+        const stops = (j?.stops || []).map(airport).filter(Boolean);
         this.cache.set(
           callsign,
-          j?.found && o && d ? { origin: o, destination: d } : null,
+          j?.found && o && d ? { origin: o, destination: d, stops } : null,
         );
       })
       .catch(() => this.cache.set(callsign, null))
@@ -135,6 +139,8 @@ export class FlightPath {
 
   _clear(status) {
     if (this.result) this.routes.clear();
+    for (const l of this.extraLegs) l.clear();
+    this.legs = [];
     this.result = null;
     this.ends = null;
     this.status = status;
@@ -143,6 +149,7 @@ export class FlightPath {
 
   update(dt, view) {
     this.routes.update(dt, view);
+    for (const l of this.extraLegs) l.update(dt, view);
     // A new selection: drop the previous plane's route at once, then look up the new one.
     const sel = this.live.tracked
       ? `${this.live.tracked.kind}:${this.live.tracked.id}`
@@ -182,20 +189,42 @@ export class FlightPath {
       this.key = 'none';
       return;
     }
-    const key = `${r.origin.lat},${r.origin.lon}>${r.destination.lat},${r.destination.lon}`;
+    // One leg per hop: origin → each fuel / layover stop → destination.
+    const airports = [r.origin, ...(r.stops || []), r.destination];
+    const key = airports.map((a) => `${a.lat},${a.lon}`).join('>');
     if (key === this.key) return;
     this.key = key;
-    this.routes.clear();
-    const res = this.routes.measureGeodetic(
-      [r.origin.lat, r.origin.lon],
-      [r.destination.lat, r.destination.lon],
-    );
-    this.result = res;
+    this._clear('');
+    const layers = [this.routes];
+    while (this.extraLegs.length < airports.length - 2) {
+      const l = new RouteLayer({ frame: this.frame });
+      l.attach(this.view);
+      this.extraLegs.push(l);
+    }
+    layers.push(...this.extraLegs);
+    this.legs = [];
+    for (let i = 0; i < airports.length - 1; i++) {
+      const a = airports[i];
+      const b = airports[i + 1];
+      const res = layers[i].measureGeodetic([a.lat, a.lon], [b.lat, b.lon]);
+      this.legs.push({ a, b, res });
+    }
+    this.result = this.legs[0].res;
     this.ends = { origin: r.origin, destination: r.destination };
-    const geo = res.geodesic?.distanceM;
     // Real-world distances first; the map-scale length of the straight line is secondary.
-    const flown = res.flatPathOnEarth?.groundLengthM;
-    this.status = `${r.origin.code || 'ORIGIN'} → ${r.destination.code || 'DESTINATION'} · real shortest route ${km(geo)} (cyan) · straight on flat map ${km(flown)} real, ${km(res.flat.distanceM)} on map scale (amber)`;
+    const sum = (f) => this.legs.reduce((t, l) => t + (f(l.res) || 0), 0);
+    const geo = sum((x) => x.geodesic?.distanceM);
+    const flown = sum((x) => x.flatPathOnEarth?.groundLengthM);
+    const map = sum((x) => x.flat.distanceM);
+    const path = airports.map((a) => a.code || '?').join(' → ');
+    const stopsNote = r.stops?.length
+      ? `${r.stops.length} stop${r.stops.length > 1 ? 's' : ''}: ${r.stops.map((a) => a.code || a.name).join(', ')}`
+      : 'stops: not in route data';
+    const legsNote =
+      this.legs.length > 1
+        ? ` · legs ${this.legs.map((l) => `${l.a.code}→${l.b.code} ${km(l.res.geodesic?.distanceM)}`).join(', ')}`
+        : '';
+    this.status = `${path} (${stopsNote}) · real shortest route ${km(geo)} total (cyan) · straight on flat map ${km(flown)} real, ${km(map)} on map scale (amber)${legsNote}`;
     this._buildLabels();
   }
 
@@ -301,26 +330,39 @@ export class FlightPath {
   }
 
   _buildLabels() {
-    const { origin, destination } = this.ends;
-    const res = this.result;
-    const mk = (cls, text) =>
-      `<div class="fw-route-label ${cls}">${text.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c])}</div>`;
-    const ground = res.flatPathOnEarth?.groundLengthM;
-    this.labels.innerHTML = [
-      mk(
-        'end',
-        `${origin.code || 'ORIGIN'}${origin.name ? ` · ${origin.name}` : ''}`,
-      ),
-      mk(
-        'end',
-        `${destination.code || 'DESTINATION'}${destination.name ? ` · ${destination.name}` : ''}`,
-      ),
-      mk('geo', `REAL SHORTEST ROUTE · ${km(res.geodesic?.distanceM)}`),
-      mk(
-        'flat',
-        `STRAIGHT ON FLAT MAP · ${Number.isFinite(ground) ? `${km(ground)} real (${km(res.flat.distanceM)} on map scale)` : `${km(res.flat.distanceM)} on map scale`}`,
-      ),
-    ].join('');
+    const esc = (t) =>
+      t.replace(
+        /[&<>]/g,
+        (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c],
+      );
+    const html = [];
+    this.labelAnchors = [];
+    const legs = this.legs;
+    const airports = [legs[0].a, ...legs.map((l) => l.b)];
+    airports.forEach((a, i) => {
+      const role = i === 0 ? '' : i === airports.length - 1 ? '' : ' · STOP';
+      html.push(
+        `<div class="fw-route-label end">${esc(`${a.code || 'AIRPORT'}${a.name ? ` · ${a.name}` : ''}${role}`)}</div>`,
+      );
+      this.labelAnchors.push({
+        leg: Math.max(i - 1, 0),
+        at: i === 0 ? 'a' : 'b',
+      });
+    });
+    legs.forEach((l, i) => {
+      const res = l.res;
+      const ground = res.flatPathOnEarth?.groundLengthM;
+      const prefix = legs.length > 1 ? `${l.a.code}→${l.b.code} · ` : '';
+      html.push(
+        `<div class="fw-route-label geo">${esc(`${prefix}REAL SHORTEST ROUTE · ${km(res.geodesic?.distanceM)}`)}</div>`,
+      );
+      this.labelAnchors.push({ leg: i, at: 'geo' });
+      html.push(
+        `<div class="fw-route-label flat">${esc(`${prefix}STRAIGHT ON FLAT MAP · ${Number.isFinite(ground) ? `${km(ground)} real (${km(res.flat.distanceM)} on map scale)` : `${km(res.flat.distanceM)} on map scale`}`)}</div>`,
+      );
+      this.labelAnchors.push({ leg: i, at: 'flat' });
+    });
+    this.labels.innerHTML = html.join('');
   }
 
   _screen(view, p) {
@@ -329,19 +371,27 @@ export class FlightPath {
   }
 
   _placeLabels(view) {
-    if (!this.result || !this.labels.children.length) return;
-    const res = this.result;
-    const geoPts = res.geodesic?.plane || [];
-    const flatPts = res.flat.points;
+    if (!this.legs?.length || !this.labels.children.length) return;
     const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
-    const anchors = [
-      flatPts[0],
-      flatPts[1],
-      geoPts.length ? geoPts[Math.floor(geoPts.length / 2)] : null,
-      mid(flatPts[0], flatPts[1]),
-    ];
     [...this.labels.children].forEach((el, i) => {
-      const p = anchors[i] && this._screen(view, anchors[i]);
+      const spec = this.labelAnchors?.[i];
+      const res = spec && this.legs[spec.leg]?.res;
+      let anchor = null;
+      if (res) {
+        const f = res.flat.points;
+        const g = res.geodesic?.plane || [];
+        anchor =
+          spec.at === 'a'
+            ? f[0]
+            : spec.at === 'b'
+              ? f[1]
+              : spec.at === 'geo'
+                ? g.length
+                  ? g[Math.floor(g.length / 2)]
+                  : null
+                : mid(f[0], f[1]);
+      }
+      const p = anchor && this._screen(view, anchor);
       if (!p) {
         el.style.display = 'none';
         return;
@@ -353,6 +403,7 @@ export class FlightPath {
 
   destroy() {
     this.routes.destroy();
+    for (const l of this.extraLegs) l.destroy();
     this.labels?.remove();
   }
 }
