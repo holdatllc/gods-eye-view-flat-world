@@ -252,6 +252,16 @@ export function createPanel({
   );
   treesBtn.title =
     'Trees inside OpenStreetMap woods and parks within about 3.5 km. The areas are real; individual tree positions and sizes are generated.';
+  const windowsBtn = button(
+    'WINDOWS',
+    () => {
+      buildings.windows = !buildings.windows;
+      windowsBtn.classList.toggle('on', buildings.windows);
+    },
+    buildings.windows,
+  );
+  windowsBtn.title =
+    'Generated window pattern on building walls, with a share lit at night. Building shapes and heights are OpenStreetMap data; the windows are not.';
   cam.append(
     ex.row,
     exSlider,
@@ -267,6 +277,7 @@ export function createPanel({
       farBtn,
       bridgeBtn,
       treesBtn,
+      windowsBtn,
     ),
   );
 

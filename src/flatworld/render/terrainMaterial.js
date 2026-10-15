@@ -110,7 +110,13 @@ roughnessFactor = mix(roughnessFactor, 0.14, clamp(vWater, 0.0, 1.0));`,
   }
   // Night side: dim moonlit tint plus real city lights (Black Marble, stored in the map's alpha).
   vec3 night = gl_FragColor.rgb * vec3(0.55, 0.65, 1.0) * uNightLevel;
-  night += vec3(1.0, 0.72, 0.38) * pow(nightLights, 2.0) * 1.4 * uNightLights;
+  // Close up (uNightLights < 1), the ~500 m Black Marble glow is shaped by the daytime imagery so
+  // streets and blocks read instead of one flat amber blob, and it stays off open water.
+  float closeUp = clamp((1.0 - uNightLights) / 0.8, 0.0, 1.0);
+  float luma = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+  float shape = mix(1.0, smoothstep(0.1, 0.5, luma) * 1.6, closeUp);
+  float lightsOn = pow(nightLights, 2.0) * shape * (1.0 - clamp(vWater, 0.0, 1.0));
+  night += vec3(1.0, 0.72, 0.38) * lightsOn * 1.4 * uNightLights;
   gl_FragColor.rgb = mix(night, gl_FragColor.rgb, day);
   gl_FragColor.a = 1.0;
   float r = length(vPlane);

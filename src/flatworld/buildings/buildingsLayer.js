@@ -37,17 +37,65 @@ const MERCATOR_MAX_LAT = 85.0511287798066;
  * Make a material draw y = aGround + y · uExaggeration (shared uniform). Applied to the colour
  * materials and to the shadow depth material so shadows match the drawn geometry.
  */
-function grounded(material, uniforms) {
+function grounded(material, uniforms, facade = false) {
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uExaggeration = uniforms.uExaggeration;
-    shader.vertexShader = `attribute float aGround;\nuniform float uExaggeration;\n${shader.vertexShader.replace(
+    let vs = shader.vertexShader.replace(
       '#include <begin_vertex>',
       '#include <begin_vertex>\n  transformed.y = aGround + transformed.y * uExaggeration;',
-    )}`;
+    );
+    if (facade) {
+      shader.uniforms.uWindows = uniforms.uWindows;
+      shader.uniforms.uNight = uniforms.uNight;
+      vs = `${FACADE_VERTEX_HEAD}${vs.replace('#include <begin_vertex>', FACADE_VERTEX)}`;
+      shader.fragmentShader = `${FACADE_FRAGMENT_HEAD}${shader.fragmentShader
+        .replace('#include <roughnessmap_fragment>', FACADE_ROUGHNESS)
+        .replace('#include <emissivemap_fragment>', FACADE_EMISSIVE)
+        .replace('#include <color_fragment>', FACADE_COLOR)}`;
+    }
+    shader.vertexShader = `attribute float aGround;\nuniform float uExaggeration;\n${vs}`;
   };
-  material.customProgramCacheKey = () => 'flatworld-grounded';
+  material.customProgramCacheKey = () =>
+    facade ? 'flatworld-grounded-facade' : 'flatworld-grounded';
   return material;
 }
+
+/*
+ * Generated facades (WINDOWS switch): a window grid on walls, from tile-local position and the wall
+ * normal, so it needs no extra vertex data. Floors every 3.4 m, bays every 3.2 m along the wall;
+ * the ground floor stays plain. At night a deterministic share of windows is lit. The pattern fades
+ * to its average where it would alias (far away).
+ */
+const FACADE_VERTEX_HEAD = 'varying vec3 vFacade;\n';
+const FACADE_VERTEX = `#include <begin_vertex>
+  {
+    vec3 n = normalize(normal);
+    float wall = step(abs(n.y), 0.5);
+    vec2 t = normalize(vec2(-n.z, n.x) + 1e-6);
+    vFacade = vec3(dot(position.xz, t), position.y, wall);
+  }`;
+const FACADE_FRAGMENT_HEAD = `varying vec3 vFacade;
+uniform float uWindows;
+uniform float uNight;
+float fwHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+`;
+const FACADE_COLOR = `#include <color_fragment>
+  float fwWin = 0.0;
+  float fwLit = 0.0;
+  if (uWindows > 0.5 && vFacade.z > 0.5 && vFacade.y > 3.4) {
+    vec2 g = vec2(vFacade.x / 3.2, vFacade.y / 3.4);
+    vec2 f = fract(g);
+    vec2 w = fwidth(g);
+    float crisp = 1.0 - smoothstep(0.25, 0.6, max(w.x, w.y));
+    float pane = step(0.2, f.x) * step(f.x, 0.8) * step(0.28, f.y) * step(f.y, 0.86);
+    fwWin = mix(0.348, pane, crisp);
+    fwLit = step(0.58, fwHash(floor(g) + floor(vFacade.x / 97.0))) * fwWin;
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.05, 0.07, 0.09), fwWin * 0.8);
+  }`;
+const FACADE_ROUGHNESS = `#include <roughnessmap_fragment>
+  roughnessFactor = mix(roughnessFactor, 0.2, fwWin);`;
+const FACADE_EMISSIVE = `#include <emissivemap_fragment>
+  totalEmissiveRadiance += vec3(1.0, 0.74, 0.42) * fwLit * uNight * 1.6;`;
 
 function releaseArray() {
   this.array = null;
@@ -173,7 +221,11 @@ export class BuildingsLayer {
     this.rebaseBudgetMs = 4;
     this.group = new THREE.Group();
     this.group.name = 'flatworld-buildings';
-    this.uniforms = { uExaggeration: { value: 1 } };
+    this.uniforms = {
+      uExaggeration: { value: 1 },
+      uWindows: { value: 1 },
+      uNight: { value: 0 },
+    };
     this.buildingMaterial = grounded(
       new THREE.MeshStandardMaterial({
         vertexColors: true,
@@ -181,6 +233,7 @@ export class BuildingsLayer {
         metalness: 0,
       }),
       this.uniforms,
+      true,
     );
     this.roadMaterial = grounded(
       new THREE.MeshStandardMaterial({
@@ -241,6 +294,15 @@ export class BuildingsLayer {
   set far(value) {
     this._far = Boolean(value);
     if (!this._far) this._dropQueued(this._wanted ?? new Map());
+  }
+
+  /** Generated window facades on building walls, lit at night. */
+  get windows() {
+    return this.uniforms.uWindows.value > 0.5;
+  }
+
+  set windows(value) {
+    this.uniforms.uWindows.value = value ? 1 : 0;
   }
 
   /** Generated trees inside OpenStreetMap woods and parks (near tiles only). */
@@ -909,6 +971,13 @@ export class BuildingsLayer {
     // 3. Visibility and level of detail.
     const e = chunks.exaggeration;
     this.uniforms.uExaggeration.value = e;
+    // Night at the focus from the view's sun (lit windows fade in through twilight).
+    if (view.sun?.target) {
+      const sy = view.sun.position.y - view.sun.target.position.y;
+      const sl = view.sun.position.distanceTo(view.sun.target.position) || 1;
+      this.uniforms.uNight.value =
+        1 - THREE.MathUtils.smoothstep(sy / sl, -0.1, 0.06);
+    }
     for (const rec of this.tiles.values()) {
       const show = shown.has(rec.key) && rec.based;
       if (show && rec.boundsE !== e) this._updateBounds(rec, e);
