@@ -39,11 +39,27 @@ export class FlightPath {
     this.result = null;
     this.ends = null;
     this.checkTimer = 0;
+    // The track flown since the plane was selected (drawn whether or not a route is known).
+    this.trail = { id: null, points: [] };
+    this.trailLine = new THREE.Line(
+      new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({
+        color: 0x7dff9b,
+        transparent: true,
+        opacity: 0.95,
+        depthTest: false,
+        fog: false,
+      }),
+    );
+    this.trailLine.renderOrder = 22;
+    this.trailLine.frustumCulled = false;
+    this.trailLine.visible = false;
   }
 
   attach(view) {
     this.view = view;
     this.routes.attach(view);
+    view.scene.add(this.trailLine);
     this.labels = document.createElement('div');
     this.labels.className = 'fw-route-labels';
     view.host.appendChild(this.labels);
@@ -51,7 +67,10 @@ export class FlightPath {
 
   setEnabled(on) {
     this.enabled = Boolean(on);
-    if (!this.enabled) this._clear('');
+    if (!this.enabled) {
+      this._clear('');
+      this.trailLine.visible = false;
+    }
     this.key = '';
   }
 
@@ -91,6 +110,7 @@ export class FlightPath {
       this.checkTimer = 0;
       if (this.enabled) this._refresh();
     }
+    if (this.enabled) this._updateTrail(view);
     this._placeLabels(view);
   }
 
@@ -102,7 +122,10 @@ export class FlightPath {
       return;
     }
     if (!r.origin || !r.destination) {
-      if (this.key !== 'none') this._clear('No route data for this flight');
+      if (this.key !== 'none')
+        this._clear(
+          'No route data for this flight (the route database does not list it). Green: the track it has flown since you selected it.',
+        );
       this.key = 'none';
       return;
     }
@@ -119,6 +142,45 @@ export class FlightPath {
     const geo = res.geodesic?.distanceM;
     this.status = `${r.origin.code || 'ORIGIN'} → ${r.destination.code || 'DESTINATION'} · globe ${km(geo)} · flat map ${km(res.flat.distanceM)}`;
     this._buildLabels();
+  }
+
+  /** Record and draw the selected aircraft's flown track (green). */
+  _updateTrail(view) {
+    const t = this.live.tracked;
+    const rec =
+      t && AIRCRAFT.has(t.kind) ? this.live._find(t.kind, t.id) : null;
+    const key = rec ? `${t.kind}:${t.id}` : null;
+    if (key !== this.trail.id) this.trail = { id: key, points: [], at: 0 };
+    if (!rec?.drawn) {
+      this.trailLine.visible = false;
+      return;
+    }
+    const pts = this.trail.points;
+    const last = pts[pts.length - 1];
+    const now = performance.now();
+    if (
+      !last ||
+      (now - this.trail.at > 2000 && last.distanceTo(rec.drawn) > 50)
+    ) {
+      pts.push(rec.drawn.clone());
+      this.trail.at = now;
+      if (pts.length > 2000) pts.shift();
+    }
+    if (pts.length < 1) return;
+    // Camera-relative positions (float32 on the GPU), ending at the plane's current position.
+    const o = pts[0];
+    const arr = new Float32Array((pts.length + 1) * 3);
+    pts.forEach((p, i) => arr.set([p.x - o.x, p.y - o.y, p.z - o.z], i * 3));
+    arr.set(
+      [rec.drawn.x - o.x, rec.drawn.y - o.y, rec.drawn.z - o.z],
+      pts.length * 3,
+    );
+    this.trailLine.geometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(arr, 3),
+    );
+    this.trailLine.position.copy(o);
+    this.trailLine.visible = true;
   }
 
   _buildLabels() {

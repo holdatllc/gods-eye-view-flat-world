@@ -105,6 +105,7 @@ export class LiveOverlay {
     this.lastPoll = 0;
     this.drawScale = 1;
     this.smooth = true;
+    this.deadReckon = true;
     // Satellites in the flat world's original single colour by default; per-class colours
     // (the globe's satellite classes) behind a switch.
     this.satelliteClassColours = false;
@@ -269,6 +270,13 @@ export class LiveOverlay {
     }
   }
 
+  /** Switch a layer to an exact state (not a toggle, so restores cannot invert). */
+  setLayer(kind, on) {
+    return this.dataManager?.setEnabled?.(KINDS[kind].layer, Boolean(on), {
+      origin: 'user',
+    });
+  }
+
   toggleLayer(kind) {
     return this.dataManager?.toggle?.(KINDS[kind].layer, { origin: 'user' });
   }
@@ -427,9 +435,35 @@ export class LiveOverlay {
   }
 
   /** Display position of a contact at wall time `now` (ms). */
-  _displayFix(r, now) {
+  _displayFix(r, now, kind) {
     const f = r.fixes;
     const last = f[f.length - 1];
+    // Dead reckoning (switch, on): aircraft and ships keep moving between feed polls along
+    // their reported heading at their reported speed, from the latest real fix (capped at
+    // 2 minutes). The next real fix replaces the estimate.
+    if (
+      this.deadReckon &&
+      kind !== 'satellites' &&
+      !r.onGround &&
+      Number.isFinite(r.heading) &&
+      r.speedMps > 0.5 &&
+      Number.isFinite(last?.t)
+    ) {
+      const dt = Math.min(Math.max((now - last.t) / 1000, 0), 120);
+      const d = r.speedMps * dt;
+      const th = (r.heading * Math.PI) / 180;
+      const lat = last.lat + (d * Math.cos(th)) / 111320;
+      const cosLat = Math.max(Math.cos((last.lat * Math.PI) / 180), 0.01);
+      let lon = last.lon + (d * Math.sin(th)) / (111320 * cosLat);
+      if (lon > 180) lon -= 360;
+      if (lon < -180) lon += 360;
+      return {
+        lat: Math.max(-90, Math.min(90, lat)),
+        lon,
+        altitudeM: last.altitudeM,
+        alpha: 1,
+      };
+    }
     if (this.motion === 'fixes' || f.length < 2) return { ...last, alpha: 1 };
     const a = f[0];
     const span = Math.max(last.t - a.t, 1);
@@ -499,7 +533,7 @@ export class LiveOverlay {
       let i = 0;
       const wall = Date.now();
       for (const r of recs) {
-        const fix = this._displayFix(r, wall);
+        const fix = this._displayFix(r, wall, kind);
         r.lat = fix.lat;
         r.lon = fix.lon;
         r.altitudeM = fix.altitudeM;
@@ -682,6 +716,9 @@ export class LiveOverlay {
    */
   verify() {
     const result = {
+      // With MOVE BETWEEN UPDATES on, drawn positions are estimates ahead of the latest fix, so
+      // the between-fixes check below is expected to flag them; switch it off to verify.
+      deadReckoning: this.deadReckon,
       checked: 0,
       maxLatErrDeg: 0,
       maxLonErrDeg: 0,

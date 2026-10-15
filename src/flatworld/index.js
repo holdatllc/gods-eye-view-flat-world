@@ -108,6 +108,18 @@ export function mountFlatWorld({ viewer, dataManager }) {
     // The globe's cockpit, flown from the selected aircraft's seat in the flat world.
     const cockpit = createFlatCockpit({ viewer, view, live, mode });
     view.addLayer({ update: () => cockpit.update() });
+    // Esc in the flat cockpit = EXIT COCKPIT (keeps following the plane). Capture phase on
+    // window, ahead of the globe cockpit's own Esc, which drops the selection.
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        if (e.key !== 'Escape' || !cockpit.active()) return;
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        cockpit.exit();
+      },
+      { capture: true },
+    );
     // Always-visible way out of the cockpit, back to the flat map (Esc does the same).
     const cockpitExit = document.createElement('button');
     cockpitExit.type = 'button';
@@ -164,18 +176,30 @@ export function mountFlatWorld({ viewer, dataManager }) {
       layersTurnedOn = ['flights', 'military'].filter(
         (k) => !live.isLayerOn(k),
       );
-      for (const k of layersTurnedOn) live.toggleLayer(k);
+      for (const k of layersTurnedOn) live.setLayer(k, true);
       applySatelliteDefault();
     };
     mode.beforeExit = () => {
       cockpit.beforeExit();
       selection.beforeExit();
-      if (globeSatCatalog && live.satelliteCatalog() === 'dense')
-        live.setSatelliteCatalog(globeSatCatalog);
-      if (satsTurnedOn && live.isLayerOn('satellites'))
-        live.toggleLayer('satellites');
-      for (const k of layersTurnedOn)
-        if (live.isLayerOn(k)) live.toggleLayer(k);
+      // Put the globe's layers back as they were. A plane still being followed keeps its layer
+      // on (the globe goes on following it). The switches run after the catalogue change has
+      // settled, which could otherwise switch the satellite layer back on.
+      const t = live.tracked;
+      const keep = t && live.following ? t.kind : null;
+      const off = [
+        ...(satsTurnedOn ? ['satellites'] : []),
+        ...layersTurnedOn.filter((k) => k !== keep),
+      ];
+      const catalog =
+        globeSatCatalog && live.satelliteCatalog() === 'dense'
+          ? live.setSatelliteCatalog(globeSatCatalog)
+          : null;
+      Promise.resolve(catalog)
+        .catch(() => {})
+        .then(() => {
+          for (const k of off) live.setLayer(k, false);
+        });
       layersTurnedOn = [];
       globeSatCatalog = null;
       satsTurnedOn = false;
@@ -236,6 +260,20 @@ export function mountFlatWorld({ viewer, dataManager }) {
       },
     });
     view.addLayer(labels);
+    // The flight path's status (route found, or no route data) on the selected plane's card.
+    let pathNote = '';
+    view.addLayer({
+      update: () => {
+        const note =
+          flightPath.enabled && cockpit.isAircraft(live.tracked)
+            ? flightPath.status
+            : '';
+        if (note !== pathNote) {
+          pathNote = note;
+          labels.setNote(note);
+        }
+      },
+    });
     view.addLayer({ update: () => selection.update() });
     // Moving the camera yourself stops following (it would otherwise snap back); the selection
     // and its card stay until you deselect.
@@ -318,10 +356,6 @@ export function mountFlatWorld({ viewer, dataManager }) {
     view.canvas.addEventListener('pointerleave', () => labels.setHover(null));
     // Esc deselects (the globe's own layers also clear their tracking on Esc).
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && cockpit.active()) {
-        cockpit.exit();
-        return;
-      }
       if (
         e.key === 'Escape' &&
         mode.active &&

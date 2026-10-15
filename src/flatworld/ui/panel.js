@@ -499,6 +499,16 @@ export function createPanel({
     true,
   );
   applySmooth(true);
+  const deadReckonBtn = button(
+    'MOVE BETWEEN UPDATES',
+    () => {
+      live.deadReckon = !live.deadReckon;
+      deadReckonBtn.classList.toggle('on', live.deadReckon);
+    },
+    true,
+  );
+  deadReckonBtn.title =
+    'On: planes and ships keep moving between feed updates along their reported heading and speed (an estimate; the next real report corrects it). Off: drawn only between real reports.';
   const satColoursBtn = button('SATELLITE CLASS COLOURS', () => {
     live.satelliteClassColours = !live.satelliteClassColours;
     satColoursBtn.classList.toggle('on', live.satelliteClassColours);
@@ -548,6 +558,7 @@ export function createPanel({
     el('div', { class: 'fw-row' }, flightPathBtn, globeMarkersBtn),
     el('div', { class: 'fw-row' }, presetsBtn, intelHudBtn),
     el('div', { class: 'fw-row' }, smoothBtn, satColoursBtn),
+    el('div', { class: 'fw-row' }, deadReckonBtn),
     flightPathNote,
     layerStatus,
     el(
