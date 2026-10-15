@@ -11,6 +11,8 @@
  */
 import * as THREE from 'three';
 import { aircraftIcon } from '../../data/aircraftIcons.js';
+import { CLASS_SCALE_2D } from '../../data/aircraftClass.js';
+import { GROUND_SCALE } from '../../layers/flights/policy.js';
 
 const KINDS = ['flights', 'military'];
 const COLOR = {
@@ -164,7 +166,11 @@ export class AircraftSprites {
         col[i * 3] = c.r;
         col[i * 3 + 1] = c.g;
         col[i * 3 + 2] = c.b;
-        size[i] = sel ? TRACKED_PX : ICON_PX;
+        // The globe's per-plane scale: aircraft class, and smaller on the ground.
+        size[i] =
+          (sel ? TRACKED_PX : ICON_PX) *
+          (CLASS_SCALE_2D[r.aircraftClass] || 1) *
+          (r.onGround ? GROUND_SCALE : 1);
         i += 1;
       }
     }

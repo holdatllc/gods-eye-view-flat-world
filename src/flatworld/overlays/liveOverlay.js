@@ -349,6 +349,10 @@ export class LiveOverlay {
           [a.heading, a.courseDeg, a.cog, a.trueTrack].find(Number.isFinite) ??
           null,
         speedMps: a.speedMps ?? null,
+        verticalRateMps: Number.isFinite(a.verticalRateMps)
+          ? a.verticalRateMps
+          : null,
+        aircraftClass: a.aircraftClass ?? null,
         onGround: a.onGround === true,
         source: mod.source ?? null,
         group: a.group ?? null,
@@ -413,6 +417,8 @@ export class LiveOverlay {
           label: row.label,
           heading: row.heading,
           speedMps: row.speedMps,
+          verticalRateMps: row.verticalRateMps,
+          aircraftClass: row.aircraftClass,
           source: row.source,
           onGround: row.onGround,
           group: row.group,

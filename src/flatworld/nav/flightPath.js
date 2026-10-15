@@ -315,7 +315,8 @@ export class FlightPath {
     // since selection, ending at the plane. Camera-relative (float32 on the GPU).
     // At most TRAIL_MAX_POINTS vertices in all, as the globe: the history is thinned to fit.
     let hist = this._historyPoints(view);
-    const room = Math.max(TRAIL_MAX_POINTS - pts.length, 2);
+    // One vertex is kept for the plane's own position (the head).
+    const room = Math.max(TRAIL_MAX_POINTS - 1 - pts.length, 2);
     if (hist.length > room) {
       const step = hist.length / room;
       const thin = [];
