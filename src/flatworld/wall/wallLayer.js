@@ -258,8 +258,19 @@ export class WallLayer {
     this._labelShown = false;
     this._labelKey = '';
     this._labelObserver = null;
-    this._arcs = [...ARC_STEPS].reverse().map((k) => -k).concat(0, ARC_STEPS);
-    this._ctx = { a0: 0, R: 0, circumference: 0, foot: 0, e: 1, fog: 0, cam: null };
+    this._arcs = [...ARC_STEPS]
+      .reverse()
+      .map((k) => -k)
+      .concat(0, ARC_STEPS);
+    this._ctx = {
+      a0: 0,
+      R: 0,
+      circumference: 0,
+      foot: 0,
+      e: 1,
+      fog: 0,
+      cam: null,
+    };
     this._ndcX = 0;
     this._ndcY = 0;
     this._best = NO_ANCHOR;
@@ -279,7 +290,10 @@ export class WallLayer {
 
   attach(view) {
     this.view = view;
-    const uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, this.uniforms]);
+    const uniforms = THREE.UniformsUtils.merge([
+      THREE.UniformsLib.fog,
+      this.uniforms,
+    ]);
     this._mergedUniforms = uniforms;
     // Keep our own value objects shared so update() can write through `this.uniforms`.
     for (const k of Object.keys(this.uniforms)) uniforms[k] = this.uniforms[k];
@@ -349,10 +363,17 @@ export class WallLayer {
       .sub(sun.target.position)
       .normalize();
     this.uniforms.uSunCol.value.copy(sun.color).multiplyScalar(sun.intensity);
-    this.uniforms.uSky.value.copy(view.hemi.color).multiplyScalar(view.hemi.intensity);
-    this.uniforms.uGround.value.copy(view.hemi.groundColor).multiplyScalar(view.hemi.intensity);
+    this.uniforms.uSky.value
+      .copy(view.hemi.color)
+      .multiplyScalar(view.hemi.intensity);
+    this.uniforms.uGround.value
+      .copy(view.hemi.groundColor)
+      .multiplyScalar(view.hemi.intensity);
 
-    if (this.label && Math.abs(e - this._labelExag) > Math.max(0.5, this._labelExag * 0.03)) {
+    if (
+      this.label &&
+      Math.abs(e - this._labelExag) > Math.max(0.5, this._labelExag * 0.03)
+    ) {
       this._labelExag = e;
       const text = wallLabel(e);
       if (text !== this._labelText) {
@@ -373,9 +394,14 @@ export class WallLayer {
     _p.applyMatrix4(c.cam.matrixWorldInverse);
     const depth = -_p.z;
     if (depth <= c.cam.near) return NO_ANCHOR;
-    if (Math.exp(-((depth * c.fog) ** 2)) < MIN_FOG_VISIBILITY) return NO_ANCHOR;
+    if (Math.exp(-((depth * c.fog) ** 2)) < MIN_FOG_VISIBILITY)
+      return NO_ANCHOR;
     _p.applyMatrix4(c.cam.projectionMatrix);
-    if (Math.abs(_p.x) > SCREEN_MARGIN || Math.abs(_p.y) > SCREEN_MARGIN || Math.abs(_p.z) > 1) {
+    if (
+      Math.abs(_p.x) > SCREEN_MARGIN ||
+      Math.abs(_p.y) > SCREEN_MARGIN ||
+      Math.abs(_p.z) > 1
+    ) {
       return NO_ANCHOR;
     }
     this._ndcX = _p.x;
@@ -427,7 +453,10 @@ export class WallLayer {
     if (bestIndex >= 0) {
       // Slide along the rim between the neighbouring samples so the label follows the wall smoothly.
       let lo = Math.max(-limit, arcs[Math.max(bestIndex - 1, 0)] * range);
-      let hi = Math.min(limit, arcs[Math.min(bestIndex + 1, arcs.length - 1)] * range);
+      let hi = Math.min(
+        limit,
+        arcs[Math.min(bestIndex + 1, arcs.length - 1)] * range,
+      );
       let x1 = hi - GOLDEN * (hi - lo);
       let x2 = lo + GOLDEN * (hi - lo);
       let f1 = this._probeBest(x1);
@@ -463,8 +492,14 @@ export class WallLayer {
     const h = view.canvas.clientHeight;
     const lw = this._labelW;
     const lh = this._labelH;
-    const x = Math.min(Math.max(((bx + 1) / 2) * w - lw / 2, EDGE_PX), Math.max(w - lw - EDGE_PX, EDGE_PX));
-    const y = Math.min(Math.max(((1 - by) / 2) * h - lh - LABEL_GAP_PX, EDGE_PX), Math.max(h - lh - EDGE_PX, EDGE_PX));
+    const x = Math.min(
+      Math.max(((bx + 1) / 2) * w - lw / 2, EDGE_PX),
+      Math.max(w - lw - EDGE_PX, EDGE_PX),
+    );
+    const y = Math.min(
+      Math.max(((1 - by) / 2) * h - lh - LABEL_GAP_PX, EDGE_PX),
+      Math.max(h - lh - EDGE_PX, EDGE_PX),
+    );
     const key = `${Math.round(x * 4)},${Math.round(y * 4)}`;
     if (key !== this._labelKey) {
       this._labelKey = key;

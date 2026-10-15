@@ -24,10 +24,8 @@ const SIZE_BOOST = 20;
 const NEAR_M = 1.5e5;
 const FAR_M = 3e6;
 const REFRESH_MS = 1000;
-const CHUNKS_V =
-  '#include <common>\n#include <logdepthbuf_pars_vertex>';
-const CHUNKS_F =
-  '#include <common>\n#include <logdepthbuf_pars_fragment>';
+const CHUNKS_V = '#include <common>\n#include <logdepthbuf_pars_vertex>';
+const CHUNKS_F = '#include <common>\n#include <logdepthbuf_pars_fragment>';
 
 const HEIGHT_LABEL = {
   coil: 'coil (cone-shaped, 3,828 to 5,828 km)',
@@ -104,7 +102,9 @@ function groundMaterial() {
       uSpotR: { value: SPOT_RADIUS_KM * KM },
       uSpotSoft: { value: SPOT_SOFT_KM * KM },
       uFade: { value: 1 },
-      uEdges: { value: TWILIGHT_EDGES_DEG.map((d) => Math.sin((d * Math.PI) / 180)) },
+      uEdges: {
+        value: TWILIGHT_EDGES_DEG.map((d) => Math.sin((d * Math.PI) / 180)),
+      },
     },
     vertexShader: `
 ${CHUNKS_V}
@@ -201,7 +201,13 @@ export class SkyBodies {
     this.ground.rotation.x = -Math.PI / 2;
     this.ground.position.y = 30;
     this.ground.renderOrder = 6;
-    for (const o of [this.sun, this.moon, this.cone, this.trailLine, this.ground]) {
+    for (const o of [
+      this.sun,
+      this.moon,
+      this.cone,
+      this.trailLine,
+      this.ground,
+    ]) {
       o.frustumCulled = false;
       this.group.add(o);
     }
@@ -277,8 +283,14 @@ export class SkyBodies {
     const st = this.state;
     if (!st) return;
     const cam = view.camera.position;
-    const sp = this._toThree(st.sun.world, this._v1 || (this._v1 = new THREE.Vector3()));
-    const mp = this._toThree(st.moon.world, this._v2 || (this._v2 = new THREE.Vector3()));
+    const sp = this._toThree(
+      st.sun.world,
+      this._v1 || (this._v1 = new THREE.Vector3()),
+    );
+    const mp = this._toThree(
+      st.moon.world,
+      this._v2 || (this._v2 = new THREE.Vector3()),
+    );
     const trueR = (BODY_DIAMETER_KM / 2) * KM;
 
     const ks = this._scaleFor(cam.distanceTo(sp));
@@ -292,10 +304,18 @@ export class SkyBodies {
     // Glow cone: apex at the sun, opening to a footprint on the ground below it.
     const h = st.sun.heightM;
     this.cone.position.set(sp.x, h, sp.z);
-    this.cone.scale.set(Math.max(trueR * ks * 6, 250 * KM), h, Math.max(trueR * ks * 6, 250 * KM));
+    this.cone.scale.set(
+      Math.max(trueR * ks * 6, 250 * KM),
+      h,
+      Math.max(trueR * ks * 6, 250 * KM),
+    );
     this.cone.position.y = h;
 
-    const fade = THREE.MathUtils.clamp((view.focus?.altitude ?? 1e6) / 40000 - 0.5, 0, 1);
+    const fade = THREE.MathUtils.clamp(
+      (view.focus?.altitude ?? 1e6) / 40000 - 0.5,
+      0,
+      1,
+    );
     this.ground.material.uniforms.uFade.value = fade;
     this.ground.visible = fade > 0.01;
     this._updateNightLevel();
@@ -320,7 +340,10 @@ export class SkyBodies {
     s.normalize();
     const pa = ((180 - st.moon.phaseDeg) * Math.PI) / 180;
     const L = this.moon.material.uniforms.uLight.value;
-    L.copy(v).multiplyScalar(Math.cos(pa)).addScaledVector(s, Math.sin(pa)).normalize();
+    L.copy(v)
+      .multiplyScalar(Math.cos(pa))
+      .addScaledVector(s, Math.sin(pa))
+      .normalize();
   }
 
   _updateGroundUniforms() {
@@ -378,7 +401,10 @@ export class SkyBodies {
     pos[k++] = v.x;
     pos[k++] = v.y;
     pos[k++] = v.z;
-    line.geometry.setAttribute('position', new THREE.BufferAttribute(pos.subarray(0, k), 3));
+    line.geometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(pos.subarray(0, k), 3),
+    );
     line.geometry.computeBoundingSphere();
   }
 
@@ -423,7 +449,8 @@ export class SkyBodies {
     this.dom.addEventListener('change', (e) => {
       const k = e.target.dataset.k;
       if (!k) return;
-      this.opts[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+      this.opts[k] =
+        e.target.type === 'checkbox' ? e.target.checked : e.target.value;
       this._lastRefresh = -1e9;
       this._trailKey = '';
       this._syncControls();
@@ -456,11 +483,13 @@ export class SkyBodies {
     this.corner.textContent = this.opts.boost
       ? `size x${fmt(ks, ks < 2 ? 1 : 0)} for visibility (true diameter ${BODY_DIAMETER_KM} km)`
       : `true size (${BODY_DIAMETER_KM} km)`;
-    const note =
-      'Position from real ephemeris; height is a model setting.';
+    const note = 'Position from real ephemeris; height is a model setting.';
     const sunPos = this._project(this.sun.position);
     const moonPos = this._project(this.moon.position);
-    const near = sunPos && moonPos && Math.hypot(sunPos.x - moonPos.x, sunPos.y - moonPos.y) < 130;
+    const near =
+      sunPos &&
+      moonPos &&
+      Math.hypot(sunPos.x - moonPos.x, sunPos.y - moonPos.y) < 130;
     const place = (el, s, html, dy = 0) => {
       if (!s) {
         el.style.display = 'none';

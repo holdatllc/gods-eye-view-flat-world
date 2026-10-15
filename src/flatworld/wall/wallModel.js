@@ -21,16 +21,33 @@ export const WALL = Object.freeze({
 
 /** Source heights shown in the UI (metres). */
 export const WALL_SOURCES = Object.freeze([
-  { label: 'Ross 1841', text: 'a perpendicular cliff of ice, 150 to 200 feet above the sea', metres: [46, 61] },
-  { label: 'Modern Ross Ice Shelf front', text: '15 to 50 m', metres: [15, 50] },
-  { label: 'Iceberg freeboard (Romanov et al. 2012)', text: 'averages 41 m', metres: [41, 41] },
+  {
+    label: 'Ross 1841',
+    text: 'a perpendicular cliff of ice, 150 to 200 feet above the sea',
+    metres: [46, 61],
+  },
+  {
+    label: 'Modern Ross Ice Shelf front',
+    text: '15 to 50 m',
+    metres: [15, 50],
+  },
+  {
+    label: 'Iceberg freeboard (Romanov et al. 2012)',
+    text: 'averages 41 m',
+    metres: [41, 41],
+  },
   { label: 'Shackleton 1908', text: 'over 250 feet', metres: [76, 76] },
   { label: 'Scott 1902', text: '280 feet', metres: [85, 85] },
-  { label: 'Physical limit of a floating ice cliff', text: 'about 100 m', metres: [100, 100] },
+  {
+    label: 'Physical limit of a floating ice cliff',
+    text: 'about 100 m',
+    metres: [100, 100],
+  },
 ]);
 
 function hash1(i, seed) {
-  let h = (Math.imul(i | 0, 0x27d4eb2d) ^ Math.imul(seed | 0, 0x165667b1)) >>> 0;
+  let h =
+    (Math.imul(i | 0, 0x27d4eb2d) ^ Math.imul(seed | 0, 0x165667b1)) >>> 0;
   h = Math.imul(h ^ (h >>> 15), 0x85ebca6b) >>> 0;
   h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35) >>> 0;
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
@@ -72,7 +89,7 @@ export function inletWeight(u, circumferenceM) {
     const ci = (((c + k) % cells) + cells) % cells;
     if (hash1(ci, WALL.seed + 21) > WALL.inletChance) continue;
     const frac = 0.15 + 0.7 * hash1(ci, WALL.seed + 22);
-    const d = Math.abs(x - ((c + k) + frac));
+    const d = Math.abs(x - (c + k + frac));
     const halfM = 6000 + 8000 * hash1(ci, WALL.seed + 23);
     const dM = (d / cells) * circumferenceM;
     const t = Math.max(0, 1 - dM / halfM);
@@ -84,7 +101,9 @@ export function inletWeight(u, circumferenceM) {
 /** True wall height in metres at u in [0,1) around the rim. */
 export function wallHeightM(u, circumferenceM) {
   const w = inletWeight(u, circumferenceM);
-  const h = baseHeight(u) * (1 - w) + (WALL.inletFloorM + 2 * hash1(Math.floor(u * 4096), WALL.seed + 5)) * w;
+  const h =
+    baseHeight(u) * (1 - w) +
+    (WALL.inletFloorM + 2 * hash1(Math.floor(u * 4096), WALL.seed + 5)) * w;
   return Math.min(WALL.hardCapM, h);
 }
 

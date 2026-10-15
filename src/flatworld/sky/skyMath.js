@@ -67,7 +67,11 @@ export function sinSolarAltitude(latDeg, lonDeg, sub) {
 }
 
 export function solarAltitudeDeg(latDeg, lonDeg, sub) {
-  return Math.asin(Math.max(-1, Math.min(1, sinSolarAltitude(latDeg, lonDeg, sub)))) / DEG;
+  return (
+    Math.asin(
+      Math.max(-1, Math.min(1, sinSolarAltitude(latDeg, lonDeg, sub))),
+    ) / DEG
+  );
 }
 
 /** Day starts at −0.833°; twilight bands at −6, −12, −18. */
@@ -82,11 +86,14 @@ export function dayState(altDeg) {
 }
 
 export function seasonLabel(decDeg, trendingUp) {
-  if (Math.abs(decDeg) < 1.5) return trendingUp ? 'March equinox' : 'September equinox';
+  if (Math.abs(decDeg) < 1.5)
+    return trendingUp ? 'March equinox' : 'September equinox';
   if (decDeg > 22) return 'June solstice';
   if (decDeg < -22) return 'December solstice';
   const tail = trendingUp ? 'rising' : 'falling';
-  return decDeg > 0 ? `northern spring/summer, sun ${tail}` : `northern autumn/winter, sun ${tail}`;
+  return decDeg > 0
+    ? `northern spring/summer, sun ${tail}`
+    : `northern autumn/winter, sun ${tail}`;
 }
 
 export function moonPhaseName(phaseDeg) {
@@ -108,7 +115,11 @@ export function moonPhaseName(phaseDeg) {
  * Full state for one instant. `frame` is the world frame (geodeticToWorld in display metres).
  * Heights are model settings; positions are projected with the same function as planes and ships.
  */
-export function skyState(date, frame, { mode = 'coil', moonPlace = 'dark' } = {}) {
+export function skyState(
+  date,
+  frame,
+  { mode = 'coil', moonPlace = 'dark' } = {},
+) {
   const sun = subBodyPoint(Body.Sun, date);
   const realMoon = subBodyPoint(Body.Moon, date);
   // 'dark' (default) is a model choice: the moon sits on the night side, opposite the sun in
@@ -116,7 +127,12 @@ export function skyState(date, frame, { mode = 'coil', moonPlace = 'dark' } = {}
   const moon =
     moonPlace === 'real'
       ? realMoon
-      : { ...realMoon, lon: wrap180(sun.lon + 180), realLat: realMoon.lat, realLon: realMoon.lon };
+      : {
+          ...realMoon,
+          lon: wrap180(sun.lon + 180),
+          realLat: realMoon.lat,
+          realLon: realMoon.lon,
+        };
   const sunAhead = subBodyPoint(Body.Sun, new Date(date.getTime() + 86400000));
   const sunH = sunHeightKm(sun.dec, mode) * 1000;
   const moonH = moonHeightKm(sun.dec, mode) * 1000;
