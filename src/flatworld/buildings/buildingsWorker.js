@@ -356,7 +356,7 @@ const toByte = (c) =>
   Math.round(Math.min(Math.max(srgbToLinear(c), 0), 1) * 255);
 
 /** Building layer → extruded geometry. */
-function buildBuildings(layer, ctx, probe) {
+function buildBuildings(layer, ctx, probe, far = false) {
   const E = layer.extent;
   const project = makeProjector(ctx, E);
   const mPerPx = ctx.metresPerTile / E;
@@ -436,6 +436,10 @@ function buildBuildings(layer, ctx, probe) {
         cx += q[0];
         cy += q[1];
       }
+      const cls = buildingClass(top, areaM2);
+      // Far detail keeps only the landmark class (tall or very large), so a whole city's skyline
+      // stays affordable out to the horizon.
+      if (far && cls > 0) continue;
       polys.push({
         id,
         colour: p.colour,
@@ -443,7 +447,7 @@ function buildBuildings(layer, ctx, probe) {
         bottom,
         rings,
         centroidPx: [cx / outer.length, cy / outer.length],
-        cls: buildingClass(top, areaM2),
+        cls,
         probe: probeRec,
       });
       emitted = true;
@@ -796,7 +800,7 @@ function buildRoads(layer, ctx) {
  */
 export function buildTile(
   bytes,
-  { z, x, y, frame = createWorldFrame(), probe = null },
+  { z, x, y, frame = createWorldFrame(), probe = null, far = false },
 ) {
   const t0 =
     typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -813,17 +817,20 @@ export function buildTile(
     metresPerTile: (EARTH_CIRCUMFERENCE_M * Math.cos(clat * DEG)) / 2 ** z,
   };
   const b = vt.layers.building
-    ? buildBuildings(vt.layers.building, ctx, probe)
+    ? buildBuildings(vt.layers.building, ctx, probe, far)
     : null;
-  const roads = vt.layers.transportation
-    ? buildRoads(vt.layers.transportation, ctx)
-    : null;
+  // Roads are sub-pixel at far-detail distances (the imagery shows them), so far tiles skip them.
+  const roads =
+    !far && vt.layers.transportation
+      ? buildRoads(vt.layers.transportation, ctx)
+      : null;
   const ms =
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
   return {
     z,
     x,
     y,
+    far,
     origin,
     rotationDeg: frame.displayRotationDeg,
     buildings: b?.part ?? null,
@@ -972,7 +979,7 @@ if (
         return;
       }
       const result = bytes.byteLength
-        ? buildTile(bytes, { z, x, y, frame })
+        ? buildTile(bytes, { z, x, y, frame, far: Boolean(msg.far) })
         : emptyResult(z, x, y, frame);
       result.probes = [];
       globalThis.postMessage(

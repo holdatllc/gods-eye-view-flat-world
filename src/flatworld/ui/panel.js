@@ -222,6 +222,16 @@ export function createPanel({
     },
     buildings.enabled,
   );
+  const farBtn = button(
+    'FAR BUILDINGS',
+    () => {
+      buildings.far = !buildings.far;
+      farBtn.classList.toggle('on', buildings.far);
+    },
+    buildings.far,
+  );
+  farBtn.title =
+    'Tall and very large OpenStreetMap buildings (real heights) out to about 32 km, and from up to 80 km altitude';
   cam.append(
     ex.row,
     exSlider,
@@ -234,6 +244,7 @@ export function createPanel({
       coastBtn,
       gridBtn,
       buildingsBtn,
+      farBtn,
     ),
   );
 
@@ -923,7 +934,7 @@ export function createPanel({
       const failed = b.tilesFailed ?? 0;
       rows.push([
         'Buildings',
-        `${b.tilesLoaded} tiles${failed ? `, ${failed} failed (OpenFreeMap unreachable?)` : ''}`,
+        `${b.tilesLoaded} tiles (${b.farTilesVisible ?? 0} far shown)${failed ? `, ${failed} failed (OpenFreeMap unreachable?)` : ''}`,
       ]);
     }
     kv(statusBox, rows);

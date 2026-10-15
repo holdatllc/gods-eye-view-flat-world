@@ -541,3 +541,30 @@ test('fast terrain sampler equals ChunkManager.heightAt (finest loaded chunk, bi
     assert.equal(h(x, y), fake.heightAt(x, y));
   }
 });
+
+test('far detail keeps only tall or very large buildings and skips roads', () => {
+  const small = {
+    id: 60,
+    type: 3,
+    rings: [square(500, 3500, 520, 3520)],
+    properties: { render_height: 9, render_min_height: 0 },
+  };
+  const tile = encodeTile({
+    ...FEATURES,
+    building: [...FEATURES.building, small],
+  });
+  const full = buildTile(tile, { z: Z, x: TX, y: TY, frame });
+  const far = buildTile(tile, { z: Z, x: TX, y: TY, frame, far: true });
+  assert.equal(full.buildings.count, 5);
+  assert.ok(full.roads);
+  assert.equal(far.far, true);
+  assert.equal(far.roads, null);
+  // Only class 0 (≥ 40 m tall or ≥ 3,000 m²) is kept: the 80 m tower and the courtyard block.
+  assert.equal(far.buildings.count, 2);
+  assert.equal(far.buildings.lod[0], far.buildings.index.length);
+  // Same footprints, same float32 positions as the full build of those buildings.
+  assert.deepEqual(
+    Array.from(far.buildings.position),
+    Array.from(full.buildings.position.slice(0, far.buildings.position.length)),
+  );
+});

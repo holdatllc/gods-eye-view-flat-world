@@ -68,7 +68,9 @@ export function tileToLonLat(z, fx, fy) {
   };
 }
 
-const key = (z, x, y) => `${z}/${x}/${y}`;
+/** Tile key; far-detail builds of a tile ('f') are cached separately from the full build. */
+const key = (z, x, y, v = 'n') =>
+  v === 'f' ? `${z}/${x}/${y}/f` : `${z}/${x}/${y}`;
 
 /**
  * Height sampler equivalent to `chunks.heightAt` for points near bbox `b`: the same choice of the
@@ -127,22 +129,35 @@ export class BuildingsLayer {
    * @param {number} [options.maxTiles=120] LRU cache bound (tiles with geometry or known empty)
    * @param {number} [options.maxActiveTiles=64] tiles wanted at once around the focus
    * @param {number} [options.maxAltitude=25000] display metres above ground; higher → hidden
-   * @param {number} [options.maxCacheMB=256] GPU memory bound for the cache (estimate)
+   * @param {number} [options.maxCacheMB=320] GPU memory bound for the cache (estimate)
+   * @param {boolean} [options.far=true] far detail: tall and very large buildings only, from the
+   *   edge of the full-detail area out to `farRadius`, and up to `farMaxAltitude`
+   * @param {number} [options.farRadius=32000] display metres from the focus
+   * @param {number} [options.farMaxAltitude=80000] display metres above ground
+   * @param {number} [options.maxFarTiles=180] far-detail tiles wanted at once
    */
   constructor({
     frame,
     source = VECTOR_SOURCES.openfreemap,
-    maxTiles = 120,
+    maxTiles = 320,
     maxActiveTiles = 64,
     maxAltitude = 25000,
-    maxCacheMB = 256,
+    maxCacheMB = 320,
     workerCount = 2,
+    far = true,
+    farRadius = 32000,
+    farMaxAltitude = 80000,
+    maxFarTiles = 180,
   } = {}) {
     this.frame = frame;
     this.source = source;
     this.maxTiles = maxTiles;
     this.maxActiveTiles = maxActiveTiles;
     this.maxAltitude = maxAltitude;
+    this._far = Boolean(far);
+    this.farRadius = farRadius;
+    this.farMaxAltitude = farMaxAltitude;
+    this.maxFarTiles = maxFarTiles;
     this.maxCacheBytes = maxCacheMB * 1048576;
     this.workerCount = workerCount;
     this.maxInflightPerWorker = 3;
@@ -204,6 +219,16 @@ export class BuildingsLayer {
       this.group.visible = false;
       this._dropQueued(new Set());
     }
+  }
+
+  /** Far detail on/off (tall and very large buildings out to the horizon). */
+  get far() {
+    return this._far;
+  }
+
+  set far(value) {
+    this._far = Boolean(value);
+    if (!this._far) this._dropQueued(this._wanted ?? new Map());
   }
 
   attach(view) {
@@ -293,13 +318,27 @@ export class BuildingsLayer {
     return b;
   }
 
-  /** Tiles to show around the focus, nearest first. */
+  /**
+   * Tiles to show around the focus, nearest first, each with its detail: 'n' (every building and
+   * road) inside the near radius, 'f' (tall and very large buildings only) out to the far radius.
+   */
   _select(view) {
     const f = view.focus;
     const e = view.chunks.exaggeration;
     const cam = view.camera.position;
     const alt = Math.max(f.altitude, 1);
-    const radius = Math.min(Math.max(alt * 4 + 1500, 2500), 9000);
+    const nearRadius =
+      alt < this.maxAltitude
+        ? Math.min(Math.max(alt * 4 + 1500, 2500), 9000)
+        : 0;
+    const farRadius =
+      this._far && alt < this.farMaxAltitude
+        ? Math.min(
+            Math.max(alt * 2.5 + 12000, nearRadius + 3000),
+            this.farRadius,
+          )
+        : 0;
+    const radius = Math.max(nearRadius, farRadius);
     const lat = f.domain.lat;
     const lon = f.domain.lon;
     const z = BUILDINGS_ZOOM;
@@ -309,7 +348,7 @@ export class BuildingsLayer {
       (40075016.686 *
         Math.cos(Math.min(Math.abs(lat), MERCATOR_MAX_LAT) * DEG)) /
       n;
-    const span = Math.min(Math.ceil(radius / Math.max(tileM, 1)) + 1, 12);
+    const span = Math.min(Math.ceil(radius / Math.max(tileM, 1)) + 1, 24);
     const frustum = new THREE.Frustum().setFromProjectionMatrix(
       new THREE.Matrix4().multiplyMatrices(
         view.camera.projectionMatrix,
@@ -328,7 +367,10 @@ export class BuildingsLayer {
         const gy = Math.max(b.minY - f.y, 0, f.y - b.maxY);
         const focusDist = Math.hypot(gx, gy);
         if (focusDist > radius) continue;
-        const rec = this.tiles.get(key(z, tx, ty));
+        const v = focusDist <= nearRadius ? 'n' : 'f';
+        const rec =
+          this.tiles.get(key(z, tx, ty, v)) ??
+          this.tiles.get(key(z, tx, ty, v === 'n' ? 'f' : 'n'));
         const lo = rec?.minY ?? f.ground - 200 * e;
         const hi = rec?.maxY ?? f.ground + 600 * e;
         const cx = Math.max(b.minX - cam.x, 0, cam.x - b.maxX);
@@ -340,11 +382,25 @@ export class BuildingsLayer {
           box.max.set(b.maxX, hi, -b.minY);
           if (!frustum.intersectsBox(box)) continue;
         }
-        picked.push({ z, x: tx, y: ty, dist });
+        picked.push({ z, x: tx, y: ty, v, dist });
       }
     }
     picked.sort((a, b) => a.dist - b.dist);
-    return picked.slice(0, this.maxActiveTiles);
+    // Near tiles past the full-detail budget fall back to far detail; far detail has its own budget.
+    const out = [];
+    let nNear = 0;
+    let nFar = 0;
+    for (const t of picked) {
+      if (t.v === 'n' && nNear >= this.maxActiveTiles) {
+        if (!this._far) continue;
+        t.v = 'f';
+      }
+      if (t.v === 'n') nNear += 1;
+      else if (nFar < this.maxFarTiles) nFar += 1;
+      else continue;
+      out.push(t);
+    }
+    return out;
   }
 
   _dropQueued(wanted) {
@@ -354,9 +410,10 @@ export class BuildingsLayer {
   }
 
   _dispatch() {
+    // Full detail first (it is what the camera is close to), then far detail, nearest first.
     const queued = [...this.tiles.values()]
       .filter((r) => r.state === 'queued')
-      .sort((a, b) => a.dist - b.dist);
+      .sort((a, b) => (a.v === 'f') - (b.v === 'f') || a.dist - b.dist);
     for (const rec of queued) {
       const worker = this.workers.reduce(
         (best, w) => (!best || w.busy < best.busy ? w : best),
@@ -368,6 +425,7 @@ export class BuildingsLayer {
         z: rec.z,
         x: rec.x,
         y: rec.y,
+        far: rec.v === 'f',
       });
       this.jobs.set(id, { key: rec.key });
       rec.state = 'loading';
@@ -422,8 +480,9 @@ export class BuildingsLayer {
     const b = result.buildings;
     const r = result.roads;
     if (b) {
+      // Far-detail tiles do not cast shadows: they are kilometres away, and it halves their cost.
       const p = this._createPart(b, this.buildingMaterial, rec.origin, {
-        cast: true,
+        cast: rec.v !== 'f',
       });
       rec.b = {
         ...p,
@@ -679,7 +738,10 @@ export class BuildingsLayer {
       this._enabled &&
       f &&
       f.domain?.domain === DOMAIN_GPS &&
-      f.altitude < this.maxAltitude,
+      f.altitude <
+        (this._far
+          ? Math.max(this.maxAltitude, this.farMaxAltitude)
+          : this.maxAltitude),
     );
     this.group.visible = this.active;
     if (!this.active) {
@@ -693,10 +755,10 @@ export class BuildingsLayer {
     const wanted = new Map();
     const now = performance.now();
     for (const t of picked) {
-      const k = key(t.z, t.x, t.y);
+      const k = key(t.z, t.x, t.y, t.v);
       let rec = this.tiles.get(k);
       if (!rec) {
-        rec = { key: k, z: t.z, x: t.x, y: t.y, state: 'queued' };
+        rec = { key: k, z: t.z, x: t.x, y: t.y, v: t.v, state: 'queued' };
         this.tiles.set(k, rec);
       } else if (rec.state === 'failed' && now > rec.retryAt)
         rec.state = 'queued';
@@ -715,9 +777,26 @@ export class BuildingsLayer {
       this._install(a);
     }
     const chunks = view.chunks;
-    const ready = picked
-      .map((t) => this.tiles.get(key(t.z, t.x, t.y)))
-      .filter((r) => r?.state === 'ready');
+    // Each wanted tile shows its wanted detail once that is built and placed; until then it keeps
+    // showing the other detail if that is still cached, so moving the camera never opens holes.
+    const ready = [];
+    const shown = new Set();
+    for (const t of picked) {
+      const pref = this.tiles.get(key(t.z, t.x, t.y, t.v));
+      if (pref?.state === 'ready') ready.push(pref);
+      if ((pref?.state === 'ready' && pref.based) || pref?.state === 'empty') {
+        shown.add(pref.key);
+        continue;
+      }
+      const other = this.tiles.get(key(t.z, t.x, t.y, t.v === 'f' ? 'n' : 'f'));
+      if (other?.state === 'ready' && other.based) {
+        other.dist = t.dist;
+        other.lastWanted = this.frameNo;
+        wanted.set(other.key, other);
+        ready.push(other);
+        shown.add(other.key);
+      }
+    }
     // Re-check terrain signatures round-robin (a few tiles per frame).
     for (let i = 0; i < Math.min(8, ready.length); i += 1) {
       const rec = ready[(this._sigCursor + i) % ready.length];
@@ -751,7 +830,7 @@ export class BuildingsLayer {
     const e = chunks.exaggeration;
     this.uniforms.uExaggeration.value = e;
     for (const rec of this.tiles.values()) {
-      const show = wanted.has(rec.key) && rec.based;
+      const show = shown.has(rec.key) && rec.based;
       if (show && rec.boundsE !== e) this._updateBounds(rec, e);
       if (rec.b) {
         rec.b.mesh.visible = show;
@@ -793,6 +872,7 @@ export class BuildingsLayer {
     let roadSegments = 0;
     let gpu = 0;
     let cpu = 0;
+    let farVisible = 0;
     for (const rec of this.tiles.values()) {
       if (rec.state === 'ready') loaded += 1;
       else if (rec.state === 'empty') empty += 1;
@@ -816,6 +896,7 @@ export class BuildingsLayer {
       if (rec.r) trianglesLoaded += rec.r.indexCount / 3;
       if (shown) {
         visible += 1;
+        if (rec.v === 'f') farVisible += 1;
         if (rec.b?.mesh.visible) {
           triangles += rec.b.mesh.geometry.drawRange.count / 3;
           buildings += rec.b.count;
@@ -835,6 +916,8 @@ export class BuildingsLayer {
       tilesPending: pending,
       tilesFailed: failed,
       tilesVisible: visible,
+      far: this._far,
+      farTilesVisible: farVisible,
       cacheLimit: this.maxTiles,
       buildingsVisibleTiles: buildings,
       buildingsLoaded,
