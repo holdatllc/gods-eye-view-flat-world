@@ -40,6 +40,22 @@ export const ROAD_STEP_M = 24;
 const ROAD_RANK_LIFT_M = 0.08;
 /** Ground-level walls reach this far below the lowest ground sampled under the footprint. */
 export const FOUNDATION_M = 2;
+/** Bridge deck clearance per OSM `layer` (OpenMapTiles carries no deck height), and its cap. */
+export const BRIDGE_LAYER_M = 6;
+const BRIDGE_MAX_LAYER = 4;
+
+/**
+ * Deck lift (m) along a bridge piece: full clearance in the middle, ramping smoothly to 0 over
+ * `ramp` metres at each real end (abutment). Ends cut by the tile edge keep full clearance, so a
+ * bridge that spans several tiles stays level across the seams.
+ */
+export function bridgeLift(dist, total, clearance, cutStart, cutEnd) {
+  const ramp = Math.max(clearance * 10, 40);
+  const fromStart = cutStart ? Infinity : dist;
+  const fromEnd = cutEnd ? Infinity : total - dist;
+  const t = Math.min(Math.min(fromStart, fromEnd) / ramp, 1);
+  return clearance * t * t * (3 - 2 * t);
+}
 
 /**
  * Level-of-detail class of a building: 0 = tall or large (drawn at every distance), 1 = mid-size,
@@ -280,7 +296,11 @@ export function clipRing(ring, extent) {
 }
 
 /** Clip a polyline to the square [0, extent]² (Liang–Barsky per segment); returns the pieces. */
-export function clipLine(points, extent) {
+/**
+ * Clip a polyline to the tile square. When `ends` is given, it receives one { start, end } per
+ * piece: true where that end was cut by the tile edge (the line continues in the next tile).
+ */
+export function clipLine(points, extent, ends = null) {
   const pieces = [];
   let cur = null;
   for (let i = 0; i + 1 < points.length; i += 1) {
@@ -315,7 +335,9 @@ export function clipLine(points, extent) {
     else {
       cur = [pa, pb];
       pieces.push(cur);
+      ends?.push({ start: t0 > 0, end: false });
     }
+    if (ends) ends[ends.length - 1].end = t1 !== 1;
     if (t1 !== 1) cur = null;
   }
   return pieces;
@@ -655,10 +677,21 @@ function buildRoads(layer, ctx) {
     if (!style) continue;
     if (p.brunnel === 'tunnel' || p.indoor === 1 || p.indoor === true) continue;
     const width = style.width * (p.ramp === 1 || p.ramp === true ? 0.75 : 1);
+    const bridge =
+      ctx.bridges && p.brunnel === 'bridge'
+        ? BRIDGE_LAYER_M *
+          Math.min(
+            Math.max(Math.round(Number(p.layer)) || 1, 1),
+            BRIDGE_MAX_LAYER,
+          )
+        : 0;
     for (const part of f.loadGeometry()) {
       const pts = part.map((q) => [q.x, q.y]);
-      for (const piece of clipLine(pts, E))
-        lines.push({ pts: piece, style, width });
+      const ends = [];
+      const pieces = clipLine(pts, E, ends);
+      pieces.forEach((piece, i) =>
+        lines.push({ pts: piece, style, width, bridge, cut: ends[i] }),
+      );
     }
   }
   lines.sort((a, b) => a.style.lod - b.style.lod);
@@ -702,8 +735,24 @@ function buildRoads(layer, ctx) {
     const cbl = toByte(line.style.color[2]);
     const lift = line.style.rank * ROAD_RANK_LIFT_M;
     const first = vertexCount;
+    // Bridges: distance along the piece, for the deck ramp at each abutment.
+    let total = 0;
+    const along = line.bridge ? new Float64Array(pts.length) : null;
+    if (along) {
+      for (let i = 1; i < pts.length; i += 1) {
+        total += Math.hypot(
+          pts[i].lx - pts[i - 1].lx,
+          pts[i].ly - pts[i - 1].ly,
+        );
+        along[i] = total;
+      }
+    }
     for (let i = 0; i < pts.length; i += 1) {
       const q = pts[i];
+      const y = along
+        ? lift +
+          bridgeLift(along[i], total, line.bridge, line.cut.start, line.cut.end)
+        : lift;
       let tx = 0;
       let ty = 0;
       let px = 0;
@@ -737,15 +786,15 @@ function buildRoads(layer, ctx) {
       const ny = tx;
       const cosHalf = Math.max(nx * -py + ny * px, 0.35);
       const off = hw / cosHalf;
-      position.push3(q.lx + nx * off, lift, -(q.ly + ny * off));
-      position.push3(q.lx - nx * off, lift, -(q.ly - ny * off));
+      position.push3(q.lx + nx * off, y, -(q.ly + ny * off));
+      position.push3(q.lx - nx * off, y, -(q.ly - ny * off));
       normal.push3(0, 127, 0);
       normal.push3(0, 127, 0);
       color.push3(cr, cg, cbl);
       color.push3(cr, cg, cbl);
       samples.push(q.lx);
       samples.push(q.ly);
-      relMax = Math.max(relMax, lift);
+      relMax = Math.max(relMax, y);
       vertexCount += 2;
     }
     for (let i = 0; i + 1 < pts.length; i += 1) {
@@ -793,6 +842,152 @@ function buildRoads(layer, ctx) {
   };
 }
 
+// ---- Trees -------------------------------------------------------------------------------------
+
+/**
+ * Generated tree placement inside real OpenStreetMap woods and parks (OpenMapTiles `landcover`):
+ * the areas are data, the individual trees are not (OSM single trees are not in the tiles). Each
+ * tree comes from a jittered grid in global z14 pixel space, so placement is deterministic and
+ * continues seamlessly across tile edges.
+ */
+export const TREE_KINDS = Object.freeze({
+  wood: { spacingM: 9, minH: 10, maxH: 22, crown: [0.24, 0.34] },
+  park: { spacingM: 22, minH: 8, maxH: 17, crown: [0.3, 0.42] },
+});
+export const MAX_TREES_PER_TILE = 6000;
+const PARK_SUBCLASSES = new Set([
+  'park',
+  'garden',
+  'village_green',
+  'recreation_ground',
+  'allotments',
+]);
+
+export function treeKind(p) {
+  if (p.class === 'wood') return 'wood';
+  if (p.class === 'grass' && PARK_SUBCLASSES.has(p.subclass)) return 'park';
+  return null;
+}
+
+/** Integer 2D hash → [0, 1). */
+export function hash2(i, j, salt) {
+  let h = Math.imul(i | 0, 0x27d4eb2d) ^ Math.imul(j | 0, 0x165667b1) ^ salt;
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+  h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+  return ((h ^ (h >>> 15)) >>> 0) / 4294967296;
+}
+
+function buildTrees(layer, ctx) {
+  const E = layer.extent;
+  const mPerPx = ctx.metresPerTile / E;
+  const project = makeProjector(ctx, E);
+  const polys = [];
+  let expected = 0;
+  for (let i = 0; i < layer.length; i += 1) {
+    const f = layer.feature(i);
+    if (f.type !== 3) continue;
+    const kind = treeKind(f.properties);
+    if (!kind) continue;
+    for (const polygon of classifyRings(f.loadGeometry())) {
+      const rings = polygon
+        .map((r) => openRing(r))
+        .filter((r) => r.length >= 3);
+      if (!rings.length) continue;
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const [x, y] of rings[0]) {
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+      minX = Math.max(minX, 0);
+      minY = Math.max(minY, 0);
+      maxX = Math.min(maxX, E);
+      maxY = Math.min(maxY, E);
+      if (!(maxX > minX && maxY > minY)) continue;
+      let area = Math.abs(ringArea(rings[0]));
+      for (const r of rings.slice(1)) area -= Math.abs(ringArea(r));
+      // Only the part inside the tile counts towards the budget.
+      const inTile =
+        ((maxX - minX) * (maxY - minY)) /
+        Math.max(
+          (Math.max(...rings[0].map((q) => q[0])) -
+            Math.min(...rings[0].map((q) => q[0]))) *
+            (Math.max(...rings[0].map((q) => q[1])) -
+              Math.min(...rings[0].map((q) => q[1]))),
+          1e-9,
+        );
+      const areaM2 = Math.max(area, 0) * Math.min(inTile, 1) * mPerPx * mPerPx;
+      expected += areaM2 / TREE_KINDS[kind].spacingM ** 2;
+      polys.push({ kind, rings, minX, minY, maxX, maxY });
+    }
+  }
+  if (!polys.length) return null;
+  // Thin uniformly when a tile is one big forest, so every tile stays within budget.
+  const thin = Math.max(1, Math.sqrt(expected / MAX_TREES_PER_TILE));
+  const data = new Grow(Float32Array, 1 << 12);
+  const tint = new Grow(Uint8Array, 1 << 12);
+  const gx0 = ctx.x * E;
+  const gy0 = ctx.y * E;
+  let count = 0;
+  let maxH = 0;
+  for (const poly of polys) {
+    const k = TREE_KINDS[poly.kind];
+    const sp = (k.spacingM * thin) / mPerPx; // grid spacing in tile pixels
+    const salt = poly.kind === 'wood' ? 0x5bd1e995 : 0x1b873593;
+    const i0 = Math.floor((gx0 + poly.minX) / sp);
+    const i1 = Math.floor((gx0 + poly.maxX) / sp);
+    const j0 = Math.floor((gy0 + poly.minY) / sp);
+    const j1 = Math.floor((gy0 + poly.maxY) / sp);
+    for (let j = j0; j <= j1 && count < MAX_TREES_PER_TILE; j += 1) {
+      for (let i = i0; i <= i1 && count < MAX_TREES_PER_TILE; i += 1) {
+        const px = (i + 0.1 + 0.8 * hash2(i, j, salt)) * sp - gx0;
+        const py = (j + 0.1 + 0.8 * hash2(i, j, salt ^ 0x9e3779b9)) * sp - gy0;
+        if (px < 0 || px >= E || py < 0 || py >= E) continue;
+        const pt = [px, py];
+        if (!pointInRing(pt, poly.rings[0])) continue;
+        let hole = false;
+        for (let r = 1; r < poly.rings.length && !hole; r += 1)
+          hole = pointInRing(pt, poly.rings[r]);
+        if (hole) continue;
+        const q = project(px, py);
+        const u = hash2(i, j, salt ^ 0x85ebca6b);
+        const h = k.minH + (k.maxH - k.minH) * u;
+        const crown =
+          h *
+          (k.crown[0] +
+            (k.crown[1] - k.crown[0]) * hash2(i, j, salt ^ 0xc2b2ae35));
+        data.push(q.lx);
+        data.push(q.ly);
+        data.push(h);
+        data.push(crown);
+        // Leaf tint: darker, bluer woods; lighter, yellower park trees; small per-tree variation.
+        const v = hash2(i, j, salt ^ 0x27d4eb2f);
+        const base =
+          poly.kind === 'wood' ? [0.52, 0.66, 0.5] : [0.74, 0.88, 0.6];
+        tint.push3(
+          Math.round(255 * base[0] * (0.85 + 0.3 * v)),
+          Math.round(255 * Math.min(base[1] * (0.9 + 0.2 * u), 1)),
+          Math.round(255 * base[2] * (0.85 + 0.3 * (1 - v))),
+        );
+        maxH = Math.max(maxH, h);
+        count += 1;
+      }
+    }
+  }
+  if (!count) return null;
+  return {
+    count,
+    data: data.done(),
+    tint: tint.done(),
+    thin,
+    bounds: { relMin: 0, relMax: maxH },
+  };
+}
+
 /**
  * Decode one OpenMapTiles vector tile and build its building and road geometry.
  * @param {Uint8Array} bytes raw (already decompressed) MVT bytes
@@ -800,7 +995,16 @@ function buildRoads(layer, ctx) {
  */
 export function buildTile(
   bytes,
-  { z, x, y, frame = createWorldFrame(), probe = null, far = false },
+  {
+    z,
+    x,
+    y,
+    frame = createWorldFrame(),
+    probe = null,
+    far = false,
+    bridges = true,
+    trees: treesOn = true,
+  },
 ) {
   const t0 =
     typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -815,6 +1019,8 @@ export function buildTile(
     frame,
     origin,
     metresPerTile: (EARTH_CIRCUMFERENCE_M * Math.cos(clat * DEG)) / 2 ** z,
+    bridges,
+    trees: treesOn,
   };
   const b = vt.layers.building
     ? buildBuildings(vt.layers.building, ctx, probe, far)
@@ -823,6 +1029,10 @@ export function buildTile(
   const roads =
     !far && vt.layers.transportation
       ? buildRoads(vt.layers.transportation, ctx)
+      : null;
+  const trees =
+    !far && ctx.trees && vt.layers.landcover
+      ? buildTrees(vt.layers.landcover, ctx)
       : null;
   const ms =
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
@@ -835,6 +1045,7 @@ export function buildTile(
     rotationDeg: frame.displayRotationDeg,
     buildings: b?.part ?? null,
     roads,
+    trees,
     probes: b?.probes ?? [],
     stats: {
       ms,
@@ -843,6 +1054,7 @@ export function buildTile(
       hidden3d: b?.hidden ?? 0,
       buildings: b?.part?.count ?? 0,
       roadSegments: roads?.segments ?? 0,
+      trees: trees?.count ?? 0,
     },
   };
 }
@@ -850,7 +1062,7 @@ export function buildTile(
 /** Typed arrays of a built tile, for postMessage transfer. */
 export function transferables(result) {
   const out = [];
-  for (const part of [result.buildings, result.roads]) {
+  for (const part of [result.buildings, result.roads, result.trees]) {
     if (!part) continue;
     for (const v of Object.values(part))
       if (ArrayBuffer.isView(v)) out.push(v.buffer);
@@ -937,6 +1149,7 @@ function emptyResult(z, x, y, frame) {
     rotationDeg: frame.displayRotationDeg,
     buildings: null,
     roads: null,
+    trees: null,
     probes: [],
     stats: {
       ms: 0,
@@ -979,7 +1192,15 @@ if (
         return;
       }
       const result = bytes.byteLength
-        ? buildTile(bytes, { z, x, y, frame, far: Boolean(msg.far) })
+        ? buildTile(bytes, {
+            z,
+            x,
+            y,
+            frame,
+            far: Boolean(msg.far),
+            bridges: msg.bridges !== false,
+            trees: msg.trees !== false,
+          })
         : emptyResult(z, x, y, frame);
       result.probes = [];
       globalThis.postMessage(

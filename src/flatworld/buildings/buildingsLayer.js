@@ -23,6 +23,11 @@
 import * as THREE from 'three';
 import { VECTOR_SOURCES } from '../sources/catalog.js';
 import { DOMAIN_GPS } from '../projection/domains.js';
+import {
+  createTreeMaterials,
+  createTreeMesh,
+  createUnitTree,
+} from './treeMesh.js';
 
 export const BUILDINGS_ZOOM = 14;
 const DEG = Math.PI / 180;
@@ -155,6 +160,8 @@ export class BuildingsLayer {
     this.maxActiveTiles = maxActiveTiles;
     this.maxAltitude = maxAltitude;
     this._far = Boolean(far);
+    this._bridges = true;
+    this._gen = 0;
     this.farRadius = farRadius;
     this.farMaxAltitude = farMaxAltitude;
     this.maxFarTiles = maxFarTiles;
@@ -184,6 +191,11 @@ export class BuildingsLayer {
       this.uniforms,
     );
     this.depthMaterial = grounded(new THREE.MeshDepthMaterial(), this.uniforms);
+    this.treeUnit = createUnitTree();
+    this.treeMaterials = createTreeMaterials(this.uniforms);
+    this._trees = true;
+    /** Trees are drawn on tiles nearer than this (display metres from the camera). */
+    this.treeDistance = 3500;
     this.tiles = new Map(); // key → tile record
     this.boundsCache = new Map(); // key → display bbox of the tile
     this.workers = [];
@@ -231,6 +243,26 @@ export class BuildingsLayer {
     if (!this._far) this._dropQueued(this._wanted ?? new Map());
   }
 
+  /** Generated trees inside OpenStreetMap woods and parks (near tiles only). */
+  get trees() {
+    return this._trees;
+  }
+
+  set trees(value) {
+    this._trees = Boolean(value);
+  }
+
+  /** Lift bridge decks above the ground and water (OSM layer); changing it rebuilds the tiles. */
+  get bridges() {
+    return this._bridges;
+  }
+
+  set bridges(value) {
+    if (this._bridges === Boolean(value)) return;
+    this._bridges = Boolean(value);
+    this.clear();
+  }
+
   attach(view) {
     this.view = view;
     view.scene.add(this.group);
@@ -262,7 +294,7 @@ export class BuildingsLayer {
       return;
     }
     const rec = this.tiles.get(job.key);
-    if (!rec || rec.state !== 'loading') return;
+    if (!rec || rec.state !== 'loading' || job.gen !== this._gen) return;
     if (msg.type === 'failed') {
       this.totals.failed += 1;
       rec.state = 'failed';
@@ -426,8 +458,10 @@ export class BuildingsLayer {
         x: rec.x,
         y: rec.y,
         far: rec.v === 'f',
+        bridges: this._bridges,
+        trees: true,
       });
-      this.jobs.set(id, { key: rec.key });
+      this.jobs.set(id, { key: rec.key, gen: this._gen });
       rec.state = 'loading';
       this.totals.requested += 1;
     }
@@ -518,7 +552,35 @@ export class BuildingsLayer {
       rec.cpuBytes += p.ground.array.byteLength + r.samples.byteLength;
       this.group.add(p.mesh);
     }
-    if (!b && !r) rec.state = 'empty';
+    const t = result.trees;
+    if (t) {
+      const p = createTreeMesh(this.treeUnit, this.treeMaterials, t);
+      p.mesh.position.set(rec.origin.x, 0, -rec.origin.y);
+      p.mesh.matrixAutoUpdate = false;
+      p.mesh.updateMatrix();
+      p.mesh.visible = false;
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (let i = 0; i < t.data.length; i += 4) {
+        const pad = t.data[i + 3];
+        minX = Math.min(minX, t.data[i] - pad);
+        maxX = Math.max(maxX, t.data[i] + pad);
+        minY = Math.min(minY, t.data[i + 1] - pad);
+        maxY = Math.max(maxY, t.data[i + 1] + pad);
+      }
+      rec.t = {
+        ...p,
+        data: t.data,
+        count: t.count,
+        bounds: { minX, minY, maxX, maxY, ...t.bounds },
+      };
+      rec.gpuBytes += t.count * (16 + 3 + 4);
+      rec.cpuBytes += t.data.byteLength + t.count * 4;
+      this.group.add(p.mesh);
+    }
+    if (!b && !r && !t) rec.state = 'empty';
     rec.sampleBounds = this._sampleBounds(rec);
     rec.based = false;
     rec.signature = null;
@@ -652,6 +714,22 @@ export class BuildingsLayer {
       rec.r.gMin = gMin;
       rec.r.gMax = gMax;
     }
+    if (rec.t) {
+      const { data } = rec.t;
+      const g = rec.t.ground.array;
+      let gMin = Infinity;
+      let gMax = -Infinity;
+      for (let i = 0; i < rec.t.count; i += 1) {
+        const base =
+          heightAt(ox + data[i * 4], oy + data[i * 4 + 1]) ?? fallback;
+        g[i] = base;
+        if (base < gMin) gMin = base;
+        if (base > gMax) gMax = base;
+      }
+      rec.t.ground.needsUpdate = true;
+      rec.t.gMin = gMin;
+      rec.t.gMax = gMax;
+    }
     this._updateBounds(rec, chunks.exaggeration);
     rec.based = true;
     rec.basedAt = performance.now();
@@ -663,7 +741,7 @@ export class BuildingsLayer {
   _updateBounds(rec, e) {
     let minY = Infinity;
     let maxY = -Infinity;
-    for (const part of [rec.b, rec.r]) {
+    for (const part of [rec.b, rec.r, rec.t]) {
       if (!part || !Number.isFinite(part.gMin)) continue;
       const b = part.bounds;
       const lo = part.gMin + Math.min(b.relMin, 0) * e;
@@ -686,13 +764,14 @@ export class BuildingsLayer {
   }
 
   _disposeTile(rec) {
-    for (const part of [rec.b, rec.r]) {
+    for (const part of [rec.b, rec.r, rec.t]) {
       if (!part) continue;
       this.group.remove(part.mesh);
       part.mesh.geometry.dispose();
     }
     rec.b = null;
     rec.r = null;
+    rec.t = null;
   }
 
   _evict(wanted) {
@@ -721,6 +800,7 @@ export class BuildingsLayer {
   }
 
   clear() {
+    this._gen += 1; // results of jobs posted before now are dropped
     for (const rec of this.tiles.values()) this._disposeTile(rec);
     this.tiles.clear();
     this.arrivals.length = 0;
@@ -853,6 +933,9 @@ export class BuildingsLayer {
           rec.r.mesh.updateMatrix();
         }
       }
+      if (rec.t)
+        rec.t.mesh.visible =
+          show && this._trees && rec.dist < this.treeDistance;
     }
     this._evict(wanted);
     this._wanted = wanted;
@@ -873,6 +956,7 @@ export class BuildingsLayer {
     let gpu = 0;
     let cpu = 0;
     let farVisible = 0;
+    let treesVisible = 0;
     for (const rec of this.tiles.values()) {
       if (rec.state === 'ready') loaded += 1;
       else if (rec.state === 'empty') empty += 1;
@@ -888,7 +972,8 @@ export class BuildingsLayer {
           cpu += g.attributes[name].array?.byteLength ?? 0;
         cpu += g.index.array?.byteLength ?? 0;
       }
-      const shown = rec.b?.mesh.visible || rec.r?.mesh.visible;
+      const shown =
+        rec.b?.mesh.visible || rec.r?.mesh.visible || rec.t?.mesh.visible;
       if (rec.b) {
         buildingsLoaded += rec.b.count;
         trianglesLoaded += rec.b.indexCount / 3;
@@ -905,6 +990,11 @@ export class BuildingsLayer {
           triangles += rec.r.mesh.geometry.drawRange.count / 3;
           roadSegments += rec.r.segments;
         }
+        if (rec.t?.mesh.visible) {
+          treesVisible += rec.t.count;
+          triangles +=
+            (rec.t.count * this.treeUnit.attributes.position.count) / 3;
+        }
       }
     }
     const t = this.totals;
@@ -918,6 +1008,8 @@ export class BuildingsLayer {
       tilesVisible: visible,
       far: this._far,
       farTilesVisible: farVisible,
+      trees: this._trees,
+      treesVisible,
       cacheLimit: this.maxTiles,
       buildingsVisibleTiles: buildings,
       buildingsLoaded,
@@ -1115,5 +1207,8 @@ export class BuildingsLayer {
     this.buildingMaterial.dispose();
     this.roadMaterial.dispose();
     this.depthMaterial.dispose();
+    this.treeUnit.dispose();
+    this.treeMaterials.color.dispose();
+    this.treeMaterials.depth.dispose();
   }
 }

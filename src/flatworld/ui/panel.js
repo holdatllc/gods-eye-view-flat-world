@@ -232,6 +232,26 @@ export function createPanel({
   );
   farBtn.title =
     'Tall and very large OpenStreetMap buildings (real heights) out to about 32 km, and from up to 80 km altitude';
+  const bridgeBtn = button(
+    'BRIDGES',
+    () => {
+      buildings.bridges = !buildings.bridges;
+      bridgeBtn.classList.toggle('on', buildings.bridges);
+    },
+    buildings.bridges,
+  );
+  bridgeBtn.title =
+    'Lift OpenStreetMap bridge decks 6 m per bridge layer above the ground or water (deck heights are estimated; the data has none)';
+  const treesBtn = button(
+    'TREES',
+    () => {
+      buildings.trees = !buildings.trees;
+      treesBtn.classList.toggle('on', buildings.trees);
+    },
+    buildings.trees,
+  );
+  treesBtn.title =
+    'Trees inside OpenStreetMap woods and parks within about 3.5 km. The areas are real; individual tree positions and sizes are generated.';
   cam.append(
     ex.row,
     exSlider,
@@ -245,6 +265,8 @@ export function createPanel({
       gridBtn,
       buildingsBtn,
       farBtn,
+      bridgeBtn,
+      treesBtn,
     ),
   );
 

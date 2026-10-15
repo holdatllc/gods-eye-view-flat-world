@@ -6,6 +6,11 @@ import {
   buildTile,
   buildingColours,
   clipLine,
+  bridgeLift,
+  hash2,
+  MAX_TREES_PER_TILE,
+  treeKind,
+  BRIDGE_LAYER_M,
   clipRing,
   lonLatToTilePixel,
   parseColour,
@@ -567,4 +572,103 @@ test('far detail keeps only tall or very large buildings and skips roads', () =>
     Array.from(far.buildings.position),
     Array.from(full.buildings.position.slice(0, far.buildings.position.length)),
   );
+});
+
+test('clipLine reports which piece ends the tile edge cut', () => {
+  const ends = [];
+  const pieces = clipLine(
+    [
+      [-100, 100],
+      [200, 100],
+      [200, 300],
+    ],
+    4096,
+    ends,
+  );
+  assert.equal(pieces.length, 1);
+  assert.deepEqual(ends, [{ start: true, end: false }]);
+});
+
+test('bridge decks: level across tile seams, ramped to the ground at abutments', () => {
+  const H = BRIDGE_LAYER_M;
+  assert.equal(bridgeLift(0, 500, H, false, false), 0);
+  assert.equal(bridgeLift(500, 500, H, false, false), 0);
+  assert.equal(bridgeLift(250, 500, H, false, false), H);
+  assert.equal(bridgeLift(0, 500, H, true, false), H, 'cut start stays level');
+  const mid = bridgeLift(30, 500, H, false, false);
+  assert.ok(mid > 0 && mid < H);
+
+  const tile = encodeTile({
+    building: [],
+    transportation: [
+      {
+        id: 7,
+        type: 2,
+        rings: [
+          [
+            [1000, 3000],
+            [3000, 3000],
+          ],
+        ],
+        properties: { class: 'primary', brunnel: 'bridge', layer: 2 },
+      },
+    ],
+  });
+  const lifted = buildTile(tile, { z: Z, x: TX, y: TY, frame });
+  const flat = buildTile(tile, { z: Z, x: TX, y: TY, frame, bridges: false });
+  const ys = (r) => r.roads.position.filter((_, i) => i % 3 === 1);
+  const top = Math.max(...ys(lifted));
+  assert.ok(Math.abs(top - (2 * H + 5 * 0.08)) < 1e-4, `deck top ${top}`);
+  assert.ok(Math.min(...ys(lifted)) < 1, 'abutments meet the ground');
+  assert.ok(Math.max(...ys(flat)) < 1, 'switch off: draped');
+  assert.ok(lifted.roads.bounds.relMax >= top - 1e-6);
+});
+
+test('trees: generated only inside OSM woods and parks, deterministic, budgeted', () => {
+  const wood = {
+    id: 80,
+    type: 3,
+    rings: [square(200, 200, 1200, 1200)],
+    properties: { class: 'wood', subclass: 'wood' },
+  };
+  const lawn = {
+    id: 81,
+    type: 3,
+    rings: [square(2000, 2000, 3000, 3000)],
+    properties: { class: 'grass', subclass: 'grass' },
+  };
+  const tile = encodeTile({ building: [], landcover: [wood, lawn] });
+  const a = buildTile(tile, { z: Z, x: TX, y: TY, frame });
+  const b = buildTile(tile, { z: Z, x: TX, y: TY, frame });
+  assert.ok(a.trees.count > 100);
+  assert.deepEqual(Array.from(a.trees.data), Array.from(b.trees.data));
+  // Every tree projects back inside the wood square (and none on the plain lawn).
+  for (let i = 0; i < a.trees.count; i += 1) {
+    const [lon, lat] = tilePixelToLonLat(Z, TX, TY, 200, 200, E);
+    const [lon2, lat2] = tilePixelToLonLat(Z, TX, TY, 1200, 1200, E);
+    const w = frame.worldToDomain(
+      a.origin.x + a.trees.data[i * 4],
+      a.origin.y + a.trees.data[i * 4 + 1],
+      0,
+    );
+    assert.ok(w.lon >= lon - 1e-9 && w.lon <= lon2 + 1e-9);
+    assert.ok(w.lat <= lat + 1e-9 && w.lat >= lat2 - 1e-9);
+    const h = a.trees.data[i * 4 + 2];
+    assert.ok(h >= 10 && h <= 22, `wood tree height ${h}`);
+  }
+  assert.equal(treeKind({ class: 'grass', subclass: 'park' }), 'park');
+  assert.equal(treeKind({ class: 'grass', subclass: 'grass' }), null);
+  const far = buildTile(tile, { z: Z, x: TX, y: TY, frame, far: true });
+  assert.equal(far.trees, null);
+  const off = buildTile(tile, { z: Z, x: TX, y: TY, frame, trees: false });
+  assert.equal(off.trees, null);
+  // A tile that is all forest stays within the per-tile budget.
+  const forest = encodeTile({
+    building: [],
+    landcover: [{ ...wood, rings: [square(-10, -10, 4106, 4106)] }],
+  });
+  const big = buildTile(forest, { z: Z, x: TX, y: TY, frame });
+  assert.ok(big.trees.count <= MAX_TREES_PER_TILE);
+  assert.ok(big.trees.count > MAX_TREES_PER_TILE * 0.7);
+  assert.ok(hash2(1, 2, 3) >= 0 && hash2(1, 2, 3) < 1);
 });
