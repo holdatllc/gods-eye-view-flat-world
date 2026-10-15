@@ -414,7 +414,12 @@ export class FlatWorldView {
     this.camera.near = Math.min(Math.max(agl * 0.002, 0.05), 2000);
     this.camera.far = 2e9;
     this.camera.updateProjectionMatrix();
-    this.chunks.update(this.camera, this.canvas.clientHeight || 800);
+    // Terrain detail is chosen per screen pixel; lodPixelScale > 1 (GLOBE-SHARP PHOTOS) counts
+    // device pixels on high-DPI screens, as the globe does.
+    this.chunks.update(
+      this.camera,
+      (this.canvas.clientHeight || 800) * (this.lodPixelScale || 1),
+    );
     this._updateEnvironment();
     for (const layer of this.layers) layer.update?.(dt, this);
     this.renderer.render(this.scene, this.camera);

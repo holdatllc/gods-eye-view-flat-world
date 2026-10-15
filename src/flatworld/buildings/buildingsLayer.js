@@ -286,6 +286,32 @@ export class BuildingsLayer {
     }
   }
 
+  /**
+   * How much of the 3D buildings, roads and trees shows over the photo ground: 0 = none (the
+   * globe's look: the satellite photo only), 1 = solid (default), in between = see-through.
+   */
+  get presence() {
+    return this._presence ?? 1;
+  }
+
+  set presence(value) {
+    const v = Math.max(0, Math.min(1, Number(value) || 0));
+    this._presence = v;
+    const mats = [
+      this.buildingMaterial,
+      this.roadMaterial,
+      this.treeMaterials?.color,
+    ].filter(Boolean);
+    for (const m of mats) {
+      const transparent = v < 1;
+      if (m.transparent !== transparent) m.needsUpdate = true;
+      m.transparent = transparent;
+      m.opacity = v;
+      m.depthWrite = !transparent;
+    }
+    this.group.visible = this.active && this._enabled && v > 0;
+  }
+
   /** Far detail on/off (tall and very large buildings out to the horizon). */
   get far() {
     return this._far;
@@ -885,7 +911,7 @@ export class BuildingsLayer {
           ? Math.max(this.maxAltitude, this.farMaxAltitude)
           : this.maxAltitude),
     );
-    this.group.visible = this.active;
+    this.group.visible = this.active && (this._presence ?? 1) > 0;
     if (!this.active) {
       this._dropQueued(new Set());
       return;

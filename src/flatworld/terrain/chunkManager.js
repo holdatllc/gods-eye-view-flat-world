@@ -11,7 +11,9 @@ import { createTerrainMaterial } from '../render/terrainMaterial.js';
 
 const GRID = 64;
 const TEX = 256;
-export const MAX_LEVEL = 19;
+export const MAX_LEVEL = 20;
+/** Finest level without GLOBE-SHARP PHOTOS (128 m chunks); with it, MAX_LEVEL (64 m). */
+export const BASE_MAX_LEVEL = 19;
 
 export class ChunkManager {
   constructor({
@@ -33,6 +35,7 @@ export class ChunkManager {
     this.drain = 0;
     this.frame = 0;
     this.pixelTolerance = 1.25;
+    this.maxLevel = MAX_LEVEL;
     this.stats = { built: 0, failed: 0, evicted: 0, buildMs: 0, visible: 0 };
     this.workers = [];
     const n = Math.max(
@@ -403,7 +406,7 @@ export class ChunkManager {
           const existing = this.chunks.get(this.key(level, tx, ty));
           if (existing) existing.lastUsed = this.frame;
           else this.request(level, tx, ty, (d / size) * (visibleTile ? 1 : 4));
-          if (visibleTile && size / d > threshold && level < MAX_LEVEL)
+          if (visibleTile && size / d > threshold && level < this.maxLevel)
             prefetch(level + 1, tx * 2, ty * 2);
         }
       }
@@ -416,12 +419,12 @@ export class ChunkManager {
       const d = Math.max(dist(level, tx, ty), 1);
       // Tiles outside the frustum stay at their current level (no refinement work for them).
       const wantsRefine =
-        level < MAX_LEVEL && size / d > threshold && inView(level, tx, ty);
+        level < this.maxLevel && size / d > threshold && inView(level, tx, ty);
       if (!chunk) {
         this.request(level, tx, ty, d / size);
         // Request the descendants this view will need right away, so every level of the path
         // to the ideal resolution loads in parallel instead of one level per round trip.
-        if (wantsRefine && level < MAX_LEVEL)
+        if (wantsRefine && level < this.maxLevel)
           prefetch(level + 1, tx * 2, ty * 2);
         return false;
       }

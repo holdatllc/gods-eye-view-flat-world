@@ -187,6 +187,36 @@ export function createPanel({
     ex.value.textContent = `${e}×`;
     view.chunks.setExaggeration(e, view.chunks.drain);
   });
+  // Globe look ⟷ flat 3D buildings, and photo sharpness as on the globe.
+  const lookSlider = el('input', {
+    type: 'range',
+    min: '0',
+    max: '100',
+    value: '100',
+  });
+  const lookRow = rangeRow('Photo ⟷ 3D', lookSlider, '3D 100%');
+  lookSlider.addEventListener('input', () => {
+    const v = Number(lookSlider.value) / 100;
+    buildings.presence = v;
+    lookRow.value.textContent =
+      v === 0 ? 'photo only' : `3D ${Math.round(v * 100)}%`;
+  });
+  function applySharp(on) {
+    view.sharpPhotos = on;
+    view.lodPixelScale = on ? Math.min(window.devicePixelRatio || 1, 1.5) : 1;
+    view.chunks.maxLevel = on ? 20 : 19;
+  }
+  const sharpBtn = button(
+    'GLOBE-SHARP PHOTOS',
+    () => {
+      applySharp(!view.sharpPhotos);
+      sharpBtn.classList.toggle('on', view.sharpPhotos);
+    },
+    true,
+  );
+  applySharp(true);
+  sharpBtn.title =
+    'On: photo tiles down to Esri zoom 20 and terrain detail chosen per device pixel, like the globe. Off: the lighter original detail.';
   const drainBtn = button('DRAIN OCEANS', () => {
     const drain = view.chunks.drain ? 0 : 1;
     view.chunks.setExaggeration(view.chunks.exaggeration, drain);
@@ -278,6 +308,14 @@ export function createPanel({
       bridgeBtn,
       treesBtn,
       windowsBtn,
+    ),
+    lookRow.row,
+    lookSlider,
+    el('div', { class: 'fw-row' }, sharpBtn),
+    el(
+      'div',
+      { class: 'fw-note' },
+      'Slider: left = the globe’s look (the Esri satellite photo only, as the globe shows it without keys); right = the flat world’s 3D OpenStreetMap buildings, roads and trees on top. GLOBE-SHARP PHOTOS loads photo tiles as fine as the globe does.',
     ),
   );
 

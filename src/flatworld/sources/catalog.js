@@ -11,7 +11,9 @@ export const IMAGERY_SOURCES = Object.freeze({
   esri: {
     id: 'esri',
     label: 'Esri World Imagery',
-    scheme: webMercatorScheme({ tileSize: 256, maxZoom: 19 }),
+    // z20 like the globe's Esri layer (where Esri has no z20 tile its grey placeholder is
+    // detected and the next zoom out is used).
+    scheme: webMercatorScheme({ tileSize: 256, maxZoom: 20 }),
     // Esri serves HTTP/1.1, so browsers allow only six connections per host; the same public
     // service is reachable on two hostnames, which doubles tile throughput.
     url: (z, x, y) =>
