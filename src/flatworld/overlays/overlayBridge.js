@@ -100,8 +100,36 @@ export class OverlayBridge {
     return Number.isFinite(out.x) && Number.isFinite(out.y);
   }
 
+  /**
+   * While the flat world is shown, the globe's screen-space helpers (ALPR icons, CCTV and FIRMS
+   * cards, mission overlays, ...) project through the flat camera too.
+   */
+  _patchSceneTransforms(on) {
+    const ST = Cesium.SceneTransforms;
+    if (!ST) return;
+    const names = ['worldToWindowCoordinates', 'wgs84ToWindowCoordinates'].filter(
+      (n) => typeof ST[n] === 'function',
+    );
+    if (on && !this._origST) {
+      this._origST = {};
+      for (const n of names) {
+        const orig = ST[n];
+        this._origST[n] = orig;
+        const projector = this.projector;
+        ST[n] = function flatWindowCoordinates(scene, position, result) {
+          const out = result || new Cesium.Cartesian2();
+          return projector.project(position, out) ? out : undefined;
+        };
+      }
+    } else if (!on && this._origST) {
+      for (const [n, orig] of Object.entries(this._origST)) ST[n] = orig;
+      this._origST = null;
+    }
+  }
+
   _apply() {
     const on = this.active && this.enabled;
+    this._patchSceneTransforms(on);
     document.body.classList.toggle('fw-detection', on);
     setWorldOverlayProjector(on ? this.projector : null);
     setFlatProjector(on ? this.projector : null);

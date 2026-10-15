@@ -26,7 +26,8 @@ const SKIP_SOURCES = new Set([
 ]);
 const SKIP_PREFIXES = ['gev-'];
 /** Sources whose shapes change through callbacks (no change events): re-read every rebuild. */
-const LIVE_SOURCES = new Set(['gev-draw-preview']);
+const LIVE_SOURCES = new Set(['gev-draw-preview', 'viewer-entities']);
+const VIEWER_ENTITY_PREFIXES = ['directions:'];
 const MAX_POINTS = 60000;
 const MAX_LINE_VERTS = 600000;
 const MAX_TILES = 220;
@@ -75,12 +76,17 @@ function skipSource(name) {
 
 /** Cesium colour (or a material/property holding one) at `time`, as [r,g,b,a]. */
 function rgba(value, time, fallback) {
-  let c = value;
+  let c = null;
   try {
-    if (c?.getValue) c = c.getValue(time, scratchColor);
-    if (c && !Number.isFinite(c.red) && c.color) {
+    if (value?.getType) {
+      // A MaterialProperty: its value is a fresh {color, ...} object (never the scratch colour,
+      // whose stale channels read as white).
+      const m = value.getValue(time, {});
+      c = m?.color ?? null;
+    } else if (value?.getValue) c = value.getValue(time, scratchColor);
+    else c = value;
+    if (c && !Number.isFinite(c.red) && c.color)
       c = c.color.getValue ? c.color.getValue(time, scratchColor) : c.color;
-    }
   } catch {
     c = null;
   }
@@ -155,11 +161,30 @@ export class GlobeLayerMirror {
         depthTest: false,
         depthWrite: false,
         fog: false,
+        // The globe's colours as they are (the flat scene's night exposure must not dim them).
+        toneMapped: false,
       }),
     );
     this.lines.renderOrder = 18;
     this.lines.frustumCulled = false;
-    this.group.add(this.lines, this.markerGroup);
+    // Polygon fills (fire perimeters, ...), in the globe's fill colour and opacity.
+    this.fillGeometry = new THREE.BufferGeometry();
+    this.fills = new THREE.Mesh(
+      this.fillGeometry,
+      new THREE.MeshBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        fog: false,
+        // The globe's colours as they are (the flat scene's night exposure must not dim them).
+        toneMapped: false,
+      }),
+    );
+    this.fills.renderOrder = 17;
+    this.fills.frustumCulled = false;
+    this.group.add(this.fills, this.lines, this.markerGroup);
     this.pointBatches = new Map();
     this.drape = new THREE.Group();
     this.drape.name = 'flatworld-globe-imagery';
@@ -185,7 +210,11 @@ export class GlobeLayerMirror {
   setEnabled(on) {
     this.enabled = Boolean(on);
     this.group.visible = this.enabled;
-    if (!this.enabled) this.hoverLabel.style.display = 'none';
+    if (!this.enabled) {
+      this.hoverLabel.style.display = 'none';
+      this.hoverItem = null;
+      this.items = [];
+    }
     this.timer = 1;
   }
 
@@ -235,11 +264,30 @@ export class GlobeLayerMirror {
     if (now - pulse.at > 500) {
       pulse.at = now;
       const t = Cesium.JulianDate.now();
+      this._raise(v.scene.preRender, [v.scene, t]);
+      this._raise(v.scene.postRender, [v.scene, t]);
+    }
+  }
+
+  /**
+   * Call a scene event's listeners one by one: one that fails must not stop the rest, and the
+   * Viewer's own (tracked-entity and zoom bookkeeping, which assume a real render) are skipped.
+   */
+  _raise(event, args) {
+    const listeners = event?._listeners;
+    const scopes = event?._scopes;
+    if (!Array.isArray(listeners)) return;
+    for (let i = 0; i < listeners.length; i += 1) {
+      const fn = listeners[i];
+      const scope = scopes?.[i];
+      if (typeof fn !== 'function' || scope === this.viewer) continue;
       try {
-        v.scene.preRender.raiseEvent(v.scene, t);
-        v.scene.postRender.raiseEvent(v.scene, t);
+        fn.apply(scope, args);
       } catch (error) {
-        console.warn('[FlatWorld] scene render listener failed', error);
+        if (!this._warned?.has(fn)) {
+          (this._warned ||= new WeakSet()).add(fn);
+          console.warn('[FlatWorld] scene render listener failed', error);
+        }
       }
     }
   }
@@ -265,6 +313,7 @@ export class GlobeLayerMirror {
     rec.dirty = false;
     rec.dynamic = entity.position && !entity.position.isConstant;
     rec.lines = [];
+    rec.fills = [];
     rec.marker = null;
     rec.name = String(
       entity.name || val(entity.label?.text, time, '') || '',
@@ -288,6 +337,45 @@ export class GlobeLayerMirror {
       if (xy.length >= 4)
         rec.lines.push({ xy: new Float64Array(xy), hs, color, clamp });
     };
+    const addFill = (cartesians, color) => {
+      if (!Array.isArray(cartesians) || cartesians.length < 3) return;
+      const step = Math.max(1, Math.floor(cartesians.length / 600));
+      const contour = [];
+      for (let i = 0; i < cartesians.length; i += step) {
+        const g = toGeo(cartesians[i]);
+        const w = g && this._world(g.lat, g.lon);
+        if (w) contour.push(new THREE.Vector2(w.x, w.y));
+      }
+      if (contour.length < 3) return;
+      let tris;
+      try {
+        tris = THREE.ShapeUtils.triangulateShape(contour, []);
+      } catch {
+        return;
+      }
+      if (!tris.length) return;
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      const xy = new Float64Array(contour.length * 2);
+      contour.forEach((v, i) => {
+        xy[i * 2] = v.x;
+        xy[i * 2 + 1] = v.y;
+        minX = Math.min(minX, v.x);
+        maxX = Math.max(maxX, v.x);
+        minY = Math.min(minY, v.y);
+        maxY = Math.max(maxY, v.y);
+      });
+      rec.fills.push({
+        xy,
+        index: Uint32Array.from(tris.flat()),
+        color,
+        cx: (minX + maxX) / 2,
+        cy: (minY + maxY) / 2,
+        size: Math.max(maxX - minX, maxY - minY),
+      });
+    };
     const poly = entity.polyline;
     if (poly && val(poly.show, time, true) !== false) {
       addLine(
@@ -304,8 +392,12 @@ export class GlobeLayerMirror {
       const outline = val(polygon.outline, time, false)
         ? rgba(polygon.outlineColor, time, null)
         : null;
-      const c = outline || rgba(polygon.material, time, fallback);
+      const fill = val(polygon.fill, time, true) !== false
+        ? rgba(polygon.material, time, fallback)
+        : null;
+      const c = outline || fill || fallback;
       addLine(positions, [c[0], c[1], c[2], Math.max(c[3], 0.75)], true, true);
+      if (fill && fill[3] > 0.02) addFill(positions, fill);
     }
     const rect = entity.rectangle;
     if (rect && val(rect.show, time, true) !== false) {
@@ -396,6 +488,18 @@ export class GlobeLayerMirror {
       if (!d.show || skipSource(d.name)) continue;
       sources.push(d);
     }
+    // Map layers that put their entities straight in viewer.entities (DIRECTIONS A/B pins and
+    // route, ...). Aircraft, satellites, trails and the CCTV gizmos there are the flat world's
+    // own or not map markers, so only these id families are mirrored.
+    const own = this._viewerEntities || (this._viewerEntities = {
+      name: 'viewer-entities',
+      show: true,
+      entities: { values: [] },
+    });
+    own.entities.values = v.entities.values.filter((e) =>
+      VIEWER_ENTITY_PREFIXES.some((p) => String(e.id).startsWith(p)),
+    );
+    if (own.entities.values.length) sources.push(own);
     const prims = [];
     const walk = (coll, depth) => {
       for (let i = 0; i < coll.length; i += 1) {
@@ -477,6 +581,43 @@ export class GlobeLayerMirror {
     }
     const lpos = [];
     const lcol = [];
+    const fpos = [];
+    const fcol = [];
+    const findex = [];
+    const pushFill = (f, source, entity, name) => {
+      const dx = f.cx - ox;
+      const dy = f.cy - oy;
+      const r = reach + f.size;
+      if (dx * dx + dy * dy > r * r) return;
+      // Too small to see as a shape at this scale: a dot in its colour, so it is not lost.
+      if (f.size < minSeg * 3) {
+        pushMarker(
+          {
+            x: f.cx,
+            y: f.cy,
+            h: 0,
+            color: [f.color[0], f.color[1], f.color[2], Math.max(f.color[3], 0.85)],
+            size: 7,
+            image: null,
+            clamp: true,
+          },
+          source,
+          entity,
+          name,
+        );
+        return;
+      }
+      if (fpos.length / 3 > MAX_LINE_VERTS) return;
+      const base = fpos.length / 3;
+      const n = f.xy.length / 2;
+      for (let i = 0; i < n; i += 1) {
+        const x = f.xy[i * 2];
+        const y = f.xy[i * 2 + 1];
+        fpos.push(x - ox, heightAt(x, y) + 18 * e, -(y - oy));
+        fcol.push(f.color[0], f.color[1], f.color[2], f.color[3]);
+      }
+      for (let i = 0; i < f.index.length; i += 1) findex.push(base + f.index[i]);
+    };
     const items = [];
     const counts = {};
     let points = 0;
@@ -557,6 +698,7 @@ export class GlobeLayerMirror {
           continue;
         }
         for (const line of rec.lines) pushLine(line);
+        for (const f of rec.fills) pushFill(f, d.name, entity, rec.name);
         if (rec.marker) pushMarker(rec.marker, d.name, entity, rec.name);
       }
     }
@@ -608,6 +750,15 @@ export class GlobeLayerMirror {
       );
       b.points.visible = b.pos.length > 0;
     }
+    this.fillGeometry.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute(fpos, 3),
+    );
+    this.fillGeometry.setAttribute(
+      'color',
+      new THREE.Float32BufferAttribute(fcol, 4),
+    );
+    this.fillGeometry.setIndex(findex);
     this.lineGeometry.setAttribute(
       'position',
       new THREE.Float32BufferAttribute(lpos, 3),
@@ -618,6 +769,12 @@ export class GlobeLayerMirror {
     );
     this.items = items;
     this.counts = counts;
+    // A name tag whose marker is gone (its layer switched off, or culled) goes with it.
+    const hovered = this.hoverItem?.entity;
+    if (hovered && !items.some((it) => it.entity === hovered)) {
+      this.hoverItem = null;
+      this.hoverLabel.style.display = 'none';
+    }
     this.lineVerts = lpos.length / 3;
   }
 
@@ -686,7 +843,7 @@ export class GlobeLayerMirror {
     return { x0: nw.x, x1: se.x, y0: nw.y, y1: se.y };
   }
 
-  _tileMesh(provider, x, y, level, image, alpha, order) {
+  _tileMesh(provider, x, y, level, image, alpha, order, base = false) {
     const ts = provider.tilingScheme;
     const r = ts.tileXYToRectangle(x, y, level);
     const mercator = ts instanceof Cesium.WebMercatorTilingScheme;
@@ -743,14 +900,17 @@ export class GlobeLayerMirror {
       map: texture,
       transparent: alpha < 1,
       opacity: alpha,
-      // Depth-tested a little above the terrain: buildings and mountains still cover it.
-      depthTest: true,
+      // The base map is depth-tested a little above the terrain (buildings and mountains still
+      // cover it); overlays (weather, scene photos) lie over everything, as on the globe, where
+      // steep relief between mesh samples would otherwise punch holes in them.
+      depthTest: base,
       depthWrite: false,
       polygonOffset: true,
       polygonOffsetFactor: -4,
       polygonOffsetUnits: -4,
       side: THREE.DoubleSide,
       fog: false,
+      toneMapped: false,
     });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.renderOrder = 4 + order * 0.01;
@@ -764,7 +924,7 @@ export class GlobeLayerMirror {
     const xy = mesh.userData.xy;
     const pos = mesh.geometry.attributes.position;
     const e = this.view.chunks.exaggeration;
-    const lift = Math.max(15, (this.view.getFocus().altitude || 0) * 0.002) * e;
+    const lift = Math.max(40, (this.view.getFocus().altitude || 0) * 0.003) * e;
     for (let k = 0; k < pos.count; k += 1) {
       const x = xy[k * 2];
       const y = xy[k * 2 + 1];
@@ -773,7 +933,7 @@ export class GlobeLayerMirror {
       pos.setXYZ(k, x - ox, h, -(y - oy));
     }
     pos.needsUpdate = true;
-    mesh.userData.placedAt = { ox, oy };
+    mesh.userData.placedAt = { ox, oy, t: performance.now() };
   }
 
   _updateDrape() {
@@ -819,7 +979,7 @@ export class GlobeLayerMirror {
       let level = Math.round(Math.log2(40075016 / x0 / (viewW / 6)));
       level = Math.max(
         provider.minimumLevel || 0,
-        Math.min(level, provider.maximumLevel ?? 10, 10),
+        Math.min(level, provider.maximumLevel ?? 19, 19),
       );
       let range = this._tileRange(provider, level, bbox);
       while (
@@ -866,6 +1026,7 @@ export class GlobeLayerMirror {
                   image,
                   entry.alpha,
                   entry.order,
+                  entry.base,
                 );
                 this._placeTile(tile.mesh, ox, oy);
                 tile.state = 'ready';
@@ -880,7 +1041,12 @@ export class GlobeLayerMirror {
             tile.mesh.visible = true;
             tile.mesh.material.opacity = entry.alpha;
             const at = tile.mesh.userData.placedAt;
-            if (!at || Math.hypot(at.ox - ox, at.oy - oy) > 1)
+            // Re-seat on the terrain as it loads in finer detail (heights only change there).
+            if (
+              !at ||
+              Math.hypot(at.ox - ox, at.oy - oy) > 1 ||
+              performance.now() - at.t > 3000
+            )
               this._placeTile(tile.mesh, ox, oy);
           }
         }
@@ -964,6 +1130,7 @@ export class GlobeLayerMirror {
   /** Name tag for the marker under the pointer. */
   hover(clientX, clientY) {
     const it = this.nearest(clientX, clientY, 10);
+    this.hoverItem = it;
     const el = this.hoverLabel;
     if (!it || !it.name) {
       el.style.display = 'none';

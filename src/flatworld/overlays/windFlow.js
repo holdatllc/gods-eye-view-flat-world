@@ -42,6 +42,7 @@ export class WindFlow {
         depthTest: false,
         depthWrite: false,
         fog: false,
+        toneMapped: false,
       }),
     );
     this.lines.renderOrder = 17;

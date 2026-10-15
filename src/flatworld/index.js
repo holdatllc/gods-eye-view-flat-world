@@ -43,6 +43,8 @@ import {
 } from '../overlays/flatProjection.js';
 import { installFlatToolbar } from './ui/flatToolbar.js';
 import { FlatCelestialRing } from './overlays/celestialRingFlat.js';
+import { createGlobeClicks } from './ui/globeClicks.js';
+import { isPointerFree } from '../data/inputOwnership.js';
 import { AircraftSprites } from './overlays/aircraftSprites.js';
 import { AircraftModels } from './overlays/aircraftModels.js';
 import { createFlatPresets } from './ui/flatPresets.js';
@@ -376,6 +378,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
         : null;
     };
     view.controls.drawing = () => Boolean(drawSink());
+    const globeClicks = createGlobeClicks({ viewer });
     view.canvas.addEventListener('dblclick', () => drawSink()?.finish());
     view.canvas.addEventListener('pointerup', (e) => {
       if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4)
@@ -418,7 +421,11 @@ export function mountFlatWorld({ viewer, dataManager }) {
         globeMarkers.select(marker);
       } else if (layerMarker) {
         if (live.tracked) selection.deselect();
-        globeLayers.select(layerMarker);
+        // The globe layer's own click: its selection, card and camera move.
+        globeClicks.click(e.clientX, e.clientY, layerMarker.entity, geoAt(e));
+      } else if (!isPointerFree()) {
+        // A globe tool holds the pointer (DIRECTIONS "click map", ...): give it the map point.
+        globeClicks.click(e.clientX, e.clientY, null, geoAt(e));
       } else if (live.tracked) selection.deselect();
     });
     let hoverPending = false;
