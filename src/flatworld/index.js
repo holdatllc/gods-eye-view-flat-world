@@ -195,8 +195,11 @@ export function mountFlatWorld({ viewer, dataManager }) {
         globeSatCatalog && live.satelliteCatalog() === 'dense'
           ? live.setSatelliteCatalog(globeSatCatalog)
           : null;
+      // CONTACTS switches its own layer set; close it first if the cockpit opened it.
+      const closedContacts = cockpit.closeContactsWeOpened();
       Promise.resolve(catalog)
         .catch(() => {})
+        .then(() => new Promise((r) => setTimeout(r, closedContacts ? 800 : 0)))
         .then(() => {
           for (const k of off) live.setLayer(k, false);
         });
@@ -268,8 +271,10 @@ export function mountFlatWorld({ viewer, dataManager }) {
           flightPath.enabled && cockpit.isAircraft(live.tracked)
             ? flightPath.status
             : '';
-        if (note !== pathNote) {
-          pathNote = note;
+        // Keyed by the plane too, so the same note shows again on the next plane's card.
+        const key = `${live.tracked?.id ?? ''}|${note}`;
+        if (key !== pathNote) {
+          pathNote = key;
           labels.setNote(note);
         }
       },

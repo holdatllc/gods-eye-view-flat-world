@@ -22,6 +22,8 @@ export function createFlatCockpit({ viewer, view, live, mode }) {
   const coordinator = () => viewer.gevCockpit ?? null;
   const controller = () => coordinator()?.cockpitView ?? null;
   let wasActive = false;
+  // Whether we opened the globe's CONTACTS for the cockpit (closed again on leaving the flat world).
+  let openedContacts = false;
   const fwd = new THREE.Vector3();
   const eye = new THREE.Vector3();
 
@@ -50,8 +52,10 @@ export function createFlatCockpit({ viewer, view, live, mode }) {
     const c = coordinator();
     if (!c) return { ok: false, error: 'Cockpit unavailable' };
     const contacts = document.getElementById('global-context-flights-btn');
-    if (contacts && contacts.getAttribute('aria-selected') !== 'true')
+    if (contacts && contacts.getAttribute('aria-selected') !== 'true') {
       contacts.click();
+      openedContacts = true;
+    }
     let result = null;
     for (let i = 0; i < 20; i += 1) {
       result = c.controlCockpit('enter', {
@@ -126,6 +130,16 @@ export function createFlatCockpit({ viewer, view, live, mode }) {
     cam.updateMatrixWorld();
   }
 
+  /** Close CONTACTS again if the cockpit opened it; returns whether it did. */
+  function closeContactsWeOpened() {
+    if (!openedContacts) return false;
+    openedContacts = false;
+    const contacts = document.getElementById('global-context-flights-btn');
+    if (contacts?.getAttribute('aria-selected') !== 'true') return false;
+    contacts.click();
+    return true;
+  }
+
   /** Leaving the flat world while in the cockpit: leave the cockpit first. */
   function beforeExit() {
     if (active()) exit();
@@ -136,6 +150,7 @@ export function createFlatCockpit({ viewer, view, live, mode }) {
   }
 
   return {
+    closeContactsWeOpened,
     enter,
     exit,
     update,

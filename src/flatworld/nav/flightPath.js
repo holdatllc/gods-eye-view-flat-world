@@ -78,21 +78,56 @@ export class FlightPath {
   _route() {
     const t = this.live.tracked;
     if (!t || !AIRCRAFT.has(t.kind)) return { tracked: false };
-    if (!this.selection.globeHas(t.kind, t.id)) return { tracked: true };
     let info = null;
-    try {
-      info = this.live.layerModule(t.kind)?.getTrackedInfo?.() ?? null;
-    } catch {
-      info = null;
+    if (this.selection.globeHas(t.kind, t.id)) {
+      try {
+        info = this.live.layerModule(t.kind)?.getTrackedInfo?.() ?? null;
+      } catch {
+        info = null;
+      }
     }
-    const origin = airport(info?.route?.origin);
-    const destination = airport(info?.route?.destination);
+    let origin = airport(info?.route?.origin);
+    let destination = airport(info?.route?.destination);
+    // The globe's own lookup only runs for its tracked plane and only after a while; ask the
+    // app's route endpoint (adsbdb, keyless) directly by callsign, once per callsign.
+    if (!origin || !destination) {
+      const rec = this.live._find(t.kind, t.id);
+      const callsign = String(
+        info?.callsign || rec?.callsign || rec?.label || '',
+      )
+        .trim()
+        .toUpperCase();
+      const looked = callsign ? this._lookup(callsign) : null;
+      if (looked === 'pending') return { tracked: true, pending: true };
+      if (looked) ({ origin, destination } = looked);
+    }
     return {
       tracked: true,
       callsign: info?.callsign || '',
       origin,
       destination,
     };
+  }
+
+  /** Route by callsign from /api/adsbdb/route: the route, null (none), or 'pending'. */
+  _lookup(callsign) {
+    this.cache ??= new Map();
+    if (!/^[A-Z0-9]{3,8}$/.test(callsign)) return null;
+    if (this.cache.has(callsign)) return this.cache.get(callsign);
+    this.cache.set(callsign, 'pending');
+    fetch(`/api/adsbdb/route/${encodeURIComponent(callsign)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        const o = airport(j?.origin);
+        const d = airport(j?.destination);
+        this.cache.set(
+          callsign,
+          j?.found && o && d ? { origin: o, destination: d } : null,
+        );
+      })
+      .catch(() => this.cache.set(callsign, null))
+      .finally(() => (this.checkTimer = 1));
+    return 'pending';
   }
 
   _clear(status) {
@@ -119,6 +154,11 @@ export class FlightPath {
     if (!r.tracked) {
       if (this.key) this._clear('');
       this.key = '';
+      return;
+    }
+    if (r.pending) {
+      if (this.key !== 'pending') this._clear('Looking up the route…');
+      this.key = 'pending';
       return;
     }
     if (!r.origin || !r.destination) {
