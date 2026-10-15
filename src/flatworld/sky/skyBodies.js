@@ -157,6 +157,7 @@ export class SkyBodies {
       show: true,
       cards: true,
       mode: 'coil',
+      moonPlace: 'dark',
       dayNight: 'A',
       bands: true,
       dim: true,
@@ -266,7 +267,10 @@ export class SkyBodies {
     }
     if (now - this._lastRefresh > REFRESH_MS) {
       this._lastRefresh = now;
-      this.state = skyState(this._simDate(), this.frame, { mode: this.opts.mode });
+      this.state = skyState(this._simDate(), this.frame, {
+        mode: this.opts.mode,
+        moonPlace: this.opts.moonPlace,
+      });
       this._updateTrail();
       this._updateGroundUniforms();
     }
@@ -408,6 +412,7 @@ export class SkyBodies {
 <label>Height <select data-k="mode">${HEIGHT_MODES.map(
       (m) => `<option value="${m}">${HEIGHT_LABEL[m]}</option>`,
     ).join('')}</select></label>
+<label>Moon <select data-k="moonPlace"><option value="dark">on the dark side (model choice)</option><option value="real">real ephemeris position</option></select></label>
 <label>Day/night <select data-k="dayNight"><option value="A">A: real sun angle</option><option value="B">B: 10,000 km spotlight (hypothetical)</option></select></label>
 <label><input type="checkbox" data-k="bands"> twilight bands</label>
 <label><input type="checkbox" data-k="dim"> dim ice outside GPS circle</label>
@@ -474,11 +479,15 @@ export class SkyBodies {
 height ${fmt(st.sun.heightM / KM)} km, ${mode}<br>season: ${st.season}<i>${note}</i>`,
     );
     const frac = Math.round(st.moon.illuminatedFraction * 100);
+    const moonNote =
+      st.moonPlace === 'real'
+        ? note
+        : `Placed on the night side opposite the sun (model choice). Real position: ${latLon(st.moon.realLat, st.moon.realLon)}. Phase is real.`;
     place(
       this.cardMoon,
       moonPos,
       `<b>Moon</b> ${latLon(st.moon.lat, st.moon.lon)}, ${fmt(st.moon.radiusM / KM)} km from the pole<br>
-height ${fmt(st.moon.heightM / KM)} km, ${mode}<br>phase: ${st.moon.phaseName} (${frac}% lit), season: ${st.season}<i>${note}</i>`,
+height ${fmt(st.moon.heightM / KM)} km, ${mode}<br>phase: ${st.moon.phaseName} (${frac}% lit), season: ${st.season}<i>${moonNote}</i>`,
       near ? 150 : 0,
     );
   }

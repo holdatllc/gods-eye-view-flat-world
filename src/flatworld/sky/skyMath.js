@@ -108,9 +108,15 @@ export function moonPhaseName(phaseDeg) {
  * Full state for one instant. `frame` is the world frame (geodeticToWorld in display metres).
  * Heights are model settings; positions are projected with the same function as planes and ships.
  */
-export function skyState(date, frame, { mode = 'coil' } = {}) {
+export function skyState(date, frame, { mode = 'coil', moonPlace = 'dark' } = {}) {
   const sun = subBodyPoint(Body.Sun, date);
-  const moon = subBodyPoint(Body.Moon, date);
+  const realMoon = subBodyPoint(Body.Moon, date);
+  // 'dark' (default) is a model choice: the moon sits on the night side, opposite the sun in
+  // longitude, at its real declination. 'real' keeps the true ephemeris position.
+  const moon =
+    moonPlace === 'real'
+      ? realMoon
+      : { ...realMoon, lon: wrap180(sun.lon + 180), realLat: realMoon.lat, realLon: realMoon.lon };
   const sunAhead = subBodyPoint(Body.Sun, new Date(date.getTime() + 86400000));
   const sunH = sunHeightKm(sun.dec, mode) * 1000;
   const moonH = moonHeightKm(sun.dec, mode) * 1000;
@@ -121,6 +127,7 @@ export function skyState(date, frame, { mode = 'coil' } = {}) {
   return {
     date,
     mode,
+    moonPlace,
     sun: { ...sun, heightM: sunH, world: sw, radiusM: Math.hypot(sw.x, sw.y) },
     moon: {
       ...moon,

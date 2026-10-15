@@ -62,14 +62,27 @@ test('Sydney December day: noon sun well above horizon, midnight night', () => {
 });
 
 test('moon: full moon is far from the sun, new moon is near it', () => {
-  const full = skyState(new Date('2026-10-26T04:12:00Z'), frame);
+  const full = skyState(new Date('2026-10-26T04:12:00Z'), frame, { moonPlace: 'real' });
   const sep = (s) => {
     let d = Math.abs(s.sun.lon - s.moon.lon);
     return d > 180 ? 360 - d : d;
   };
   console.log('FULL', full.moon.phaseName, sep(full).toFixed(1), 'deg apart');
   assert.ok(sep(full) > 150);
-  const fresh = skyState(new Date('2026-11-09T21:00:00Z'), frame);
+  const fresh = skyState(new Date('2026-11-09T21:00:00Z'), frame, { moonPlace: 'real' });
   console.log('NEW', fresh.moon.phaseName, sep(fresh).toFixed(1), 'deg apart');
   assert.ok(sep(fresh) < 30);
+});
+
+test('moon default is on the dark side: night at the moon, far from the sun, all year', () => {
+  for (const iso of ['2026-11-09T21:00:00Z', '2026-10-26T04:12:00Z', '2026-12-21T02:00:00Z', '2026-06-21T12:00:00Z']) {
+    const s = skyState(new Date(iso), frame);
+    const alt = solarAltitudeDeg(s.moon.lat, s.moon.lon, s.sun);
+    const dx = s.sun.world.x - s.moon.world.x;
+    const dy = s.sun.world.y - s.moon.world.y;
+    console.log('DARK', iso, s.moon.phaseName, 'sun alt at moon', alt.toFixed(1), 'apart km', (Math.hypot(dx, dy) / 1000).toFixed(0));
+    assert.ok(alt < -18, `${iso} moon sun-alt ${alt}`);
+    assert.ok(Math.hypot(dx, dy) > 10_000_000);
+    assert.equal(s.moon.realLon !== undefined, true);
+  }
 });
