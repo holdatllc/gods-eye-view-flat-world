@@ -146,10 +146,10 @@ class TrafficSource {
   async _load(f) {
     this.loading = true;
     const gen = ++this.generation;
-    // The road source refuses more than 16 z14 tiles: about 1.8 tile widths each way (z14 tiles
-    // shrink with latitude, ~1.2 km wide at 60°N).
+    // The road source refuses more than 16 z14 tiles: a box under 3 tile widths across
+    // touches at most 4 x 4 of them (z14 tiles shrink with latitude, ~1.2 km wide at 60°N).
     const c = Math.max(Math.cos(f.domain.lat * DEG), 0.05);
-    const half = 1.8 * 2446 * c;
+    const half = 1.4 * 2446 * c;
     const dLat = half / 111195;
     const dLon = half / (111195 * c);
     const box = {
@@ -556,7 +556,7 @@ function buildLegend({ live, panel, extras }) {
       ? `Selected: ${rows[t.kind]?.name ?? t.kind} — ${rec.label}${rec.source ? ` (${rec.source})` : ''}`
       : '';
     const notes = [];
-    for (const kind of ['vesselsRegional', 'traffic', 'localAdsb']) {
+    for (const kind of ['vessels', 'vesselsRegional', 'traffic', 'localAdsb']) {
       if (!live.isLayerOn(kind)) continue;
       const err =
         kind === 'traffic' ? extras.traffic.error : live.layerError(kind);
