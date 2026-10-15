@@ -24,6 +24,7 @@ import {
   DOMAIN_ICE,
 } from './projection/domains.js';
 import { allAttributions, attributionHtml } from './sources/catalog.js';
+import { installLiveExtras } from './overlays/liveExtras.js';
 import { installStyles } from './ui/styles.js';
 import { createPanel } from './ui/panel.js';
 import { createLiveSelection } from './ui/liveSelection.js';
@@ -199,6 +200,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
         selection.deselect();
     });
 
+    installLiveExtras({ live, panel, host });
     world = {
       view,
       mode,
