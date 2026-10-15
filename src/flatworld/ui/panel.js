@@ -59,6 +59,14 @@ export function createPanel({
   globeMarkers = null,
   presets = null,
 }) {
+  /** Smooth mode: satellites re-placed 10×/s and a lighter pixel ratio on high-DPI screens. */
+  function applySmooth(on) {
+    live.smooth = on;
+    view.renderer.setPixelRatio(
+      Math.min(window.devicePixelRatio || 1, on ? 1.5 : 2),
+    );
+    view.resize();
+  }
   const panel = el('div', {
     class: 'fw-panel',
     role: 'region',
@@ -438,6 +446,23 @@ export function createPanel({
   flightPathBtn.title =
     "Selected aircraft: draw its route between origin and destination airports, both ways — the globe's great circle (cyan) and the flat map's straight line (amber), each labelled with its length.";
   const flightPathNote = el('div', { class: 'fw-note' });
+  const smoothBtn = button(
+    'SMOOTH MODE',
+    () => {
+      applySmooth(!live.smooth);
+      smoothBtn.classList.toggle('on', live.smooth);
+    },
+    true,
+  );
+  applySmooth(true);
+  const satColoursBtn = button('SATELLITE CLASS COLOURS', () => {
+    live.satelliteClassColours = !live.satelliteClassColours;
+    satColoursBtn.classList.toggle('on', live.satelliteClassColours);
+  });
+  satColoursBtn.title =
+    'Off (default): every satellite in the original pink. On: coloured by class (station, Starlink, navigation, weather, debris…) as on the globe.';
+  smoothBtn.title =
+    'On: satellites are re-placed 10 times a second and the picture uses a lighter pixel ratio on Retina screens, so the flat world stays smooth. Off: every frame, full sharpness.';
   const presetsBtn = button(
     'VISUAL PRESETS',
     () => {
@@ -478,6 +503,7 @@ export function createPanel({
     el('div', { class: 'fw-row' }, satGroundBtn),
     el('div', { class: 'fw-row' }, flightPathBtn, globeMarkersBtn),
     el('div', { class: 'fw-row' }, presetsBtn, intelHudBtn),
+    el('div', { class: 'fw-row' }, smoothBtn, satColoursBtn),
     flightPathNote,
     layerStatus,
     el(

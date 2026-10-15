@@ -35,6 +35,9 @@ export const KINDS = {
   },
 };
 const MAX_PER_KIND = 20000;
+const UP_AXIS = new THREE.Vector3(0, 1, 0);
+/** Smooth mode: satellites (the bulk of the instances) are re-placed at this interval. */
+const SMOOTH_SATELLITE_MS = 100;
 const SATELLITE_FALLBACK = new THREE.Color(KINDS.satellites.color);
 
 function aircraftGeometry() {
@@ -101,6 +104,10 @@ export class LiveOverlay {
     this.following = false;
     this.lastPoll = 0;
     this.drawScale = 1;
+    this.smooth = true;
+    // Satellites in the flat world's original single colour by default; per-class colours
+    // (the globe's satellite classes) behind a switch.
+    this.satelliteClassColours = false;
     this.motion = 'interpolated';
     /** Off by default: satellites at their real height. On: at their sub-satellite ground point. */
     this.satelliteGroundPoints = false;
@@ -460,12 +467,35 @@ export class LiveOverlay {
       0,
       Math.round(cam.z / 1000) * 1000,
     );
+    const originMoved = !this.lastOrigin || !this.lastOrigin.equals(origin);
+    this.lastOrigin = origin.clone();
     this.group.position.copy(origin);
     this.group.updateMatrixWorld();
     let stalkCount = 0;
     const projection = this.frame.projection;
+    const local = new THREE.Vector3();
+    // Smooth mode: ~11,500 satellites move a few pixels a second on the disc, so they are
+    // re-placed ten times a second instead of every frame (always when the camera's floating
+    // origin moves, or one of them is selected).
+    const satellitesDue =
+      !this.smooth ||
+      originMoved ||
+      this.tracked?.kind === 'satellites' ||
+      now - (this.satellitesPlacedAt || 0) >= SMOOTH_SATELLITE_MS;
     for (const [kind, mesh] of Object.entries(this.meshes)) {
       const recs = this.records[kind];
+      if (kind === 'satellites' && !satellitesDue) {
+        // Keep their stalks from the last placement.
+        const cached = this.satelliteStalks;
+        if (cached?.length) {
+          const n = Math.min(cached.length / 6, 4096 - stalkCount);
+          stalkPos.set(cached.subarray(0, n * 6), stalkCount * 6);
+          stalkCount += n;
+        }
+        continue;
+      }
+      if (kind === 'satellites') this.satellitesPlacedAt = now;
+      const stalkStart = stalkCount;
       let i = 0;
       const wall = Date.now();
       for (const r of recs) {
@@ -503,18 +533,24 @@ export class LiveOverlay {
           const dy = vn * n.y + ve * east.y;
           yaw = Math.atan2(dy, dx);
         }
-        q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+        q.setFromAxisAngle(UP_AXIS, yaw);
         const dist = p.distanceTo(cam);
         const size = Math.max(
           dist * 0.0065 * KINDS[kind].size * this.drawScale,
           30,
         );
         s.setScalar(size);
-        m.compose(p.clone().sub(origin), q, s);
+        m.compose(local.copy(p).sub(origin), q, s);
         mesh.setMatrixAt(i, m);
-        if (mesh.instanceColor) mesh.setColorAt(i, r.colorObj ?? SATELLITE_FALLBACK);
+        if (mesh.instanceColor)
+          mesh.setColorAt(
+            i,
+            (this.satelliteClassColours && r.colorObj) || SATELLITE_FALLBACK,
+          );
         r.instance = i;
-        r.drawn = p.clone();
+        // Reused per record: a new vector per object per frame (~25,000) churned the GC.
+        if (r.drawn) r.drawn.copy(p);
+        else r.drawn = p.clone();
         i += 1;
         if (kind !== 'vessels' && stalkCount < 4096 && dist < 3e6) {
           const g = view.chunks.heightAt(w.x, w.y) ?? 0;
@@ -524,6 +560,8 @@ export class LiveOverlay {
           stalkCount += 1;
         }
       }
+      if (kind === 'satellites')
+        this.satelliteStalks = stalkPos.slice(stalkStart * 6, stalkCount * 6);
       mesh.count = i;
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;

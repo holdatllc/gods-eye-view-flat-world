@@ -1,6 +1,9 @@
 const CSS = `
 #flatworld-root { position: absolute; inset: 0; pointer-events: none; }
-#flatworld-root canvas { pointer-events: auto; }
+/* Only the 3D canvas takes the mouse; the names canvas on top of it must let wheel, drag and
+   clicks through (it covered the whole view and swallowed scrolling). */
+#flatworld-root canvas.flatworld-canvas { pointer-events: auto; }
+#flatworld-root canvas.fw-live-labels { pointer-events: none; }
 body.flatworld-active #flatworld-root { pointer-events: auto; }
 body.flatworld-active #world-overlay-root,
 body.flatworld-active #world-overlay-actions,

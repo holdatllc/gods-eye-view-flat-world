@@ -311,7 +311,12 @@ export class LiveLabels {
   }
 
   _color(rec) {
-    if (rec.kind === 'satellites' && rec.classColor) return rec.classColor;
+    if (
+      rec.kind === 'satellites' &&
+      rec.classColor &&
+      this.live.satelliteClassColours
+    )
+      return rec.classColor;
     return (KIND_STYLE[rec.kind] ?? KIND_STYLE.flights).color;
   }
 
