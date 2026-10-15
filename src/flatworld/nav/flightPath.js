@@ -7,6 +7,9 @@
  * (amber). Off by switch; no route data means nothing is drawn and the card says so.
  */
 import * as THREE from 'three';
+import { Line2 } from 'three/addons/lines/Line2.js';
+import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { RouteLayer } from './routeLayer.js';
 
 const AIRCRAFT = new Set(['flights', 'military']);
@@ -41,14 +44,14 @@ export class FlightPath {
     this.checkTimer = 0;
     // The track flown since the plane was selected (drawn whether or not a route is known).
     this.trail = { id: null, points: [] };
-    this.trailLine = new THREE.Line(
-      new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({
+    this.trailLine = new Line2(
+      new LineGeometry(),
+      new LineMaterial({
         color: 0x7dff9b,
+        linewidth: 3,
         transparent: true,
         opacity: 0.95,
         depthTest: false,
-        fog: false,
       }),
     );
     this.trailLine.renderOrder = 22;
@@ -174,7 +177,7 @@ export class FlightPath {
     if (!r.origin || !r.destination) {
       if (this.key !== 'none')
         this._clear(
-          'No route data for this flight (the route database does not list it). Green: the track it has flown since you selected it.',
+          'No route data for this flight (the route database does not list it). Green: the track it has flown.',
         );
       this.key = 'none';
       return;
@@ -200,7 +203,10 @@ export class FlightPath {
     const rec =
       t && AIRCRAFT.has(t.kind) ? this.live._find(t.kind, t.id) : null;
     const key = rec ? `${t.kind}:${t.id}` : null;
-    if (key !== this.trail.id) this.trail = { id: key, points: [], at: 0 };
+    if (key !== this.trail.id) {
+      this.trail = { id: key, points: [], at: 0, history: [] };
+      if (rec) this._fetchHistory(t.kind, t.id, key);
+    }
     if (!rec?.drawn) {
       this.trailLine.visible = false;
       return;
@@ -217,20 +223,79 @@ export class FlightPath {
       if (pts.length > 2000) pts.shift();
     }
     if (pts.length < 1) return;
-    // Camera-relative positions (float32 on the GPU), ending at the plane's current position.
-    const o = pts[0];
-    const arr = new Float32Array((pts.length + 1) * 3);
-    pts.forEach((p, i) => arr.set([p.x - o.x, p.y - o.y, p.z - o.z], i * 3));
+    // The flown track from takeoff (the same history the globe draws), then the positions seen
+    // since selection, ending at the plane. Camera-relative (float32 on the GPU).
+    const all = [...this._historyPoints(view), ...pts];
+    const o = all[0];
+    const arr = new Float32Array((all.length + 1) * 3);
+    all.forEach((p, i) => arr.set([p.x - o.x, p.y - o.y, p.z - o.z], i * 3));
     arr.set(
       [rec.drawn.x - o.x, rec.drawn.y - o.y, rec.drawn.z - o.z],
-      pts.length * 3,
+      all.length * 3,
     );
-    this.trailLine.geometry.setAttribute(
-      'position',
-      new THREE.BufferAttribute(arr, 3),
-    );
+    // A fresh geometry when the vertex count changes (Line2 buffers are sized on first use).
+    if (this.trailLine.userData.n !== all.length + 1) {
+      this.trailLine.geometry.dispose();
+      this.trailLine.geometry = new LineGeometry();
+      this.trailLine.userData.n = all.length + 1;
+    }
+    this.trailLine.geometry.setPositions(arr);
+    view.renderer.getSize(this.trailLine.material.resolution);
     this.trailLine.position.copy(o);
     this.trailLine.visible = true;
+  }
+
+  /**
+   * The aircraft's track since takeoff from the app's own track endpoints (OpenSky /tracks for
+   * flights, the readsb trace for military), as the globe's trail backfill uses.
+   */
+  _fetchHistory(kind, id, key) {
+    const url =
+      kind === 'military'
+        ? `/api/military/track?hex=${encodeURIComponent(id)}`
+        : `/api/flights/track?icao24=${encodeURIComponent(id)}`;
+    fetch(url)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (!j || this.trail.id !== key) return;
+        const rows = Array.isArray(j.path)
+          ? j.path
+          : Array.isArray(j.trace)
+            ? j.trace
+            : [];
+        const feet = kind === 'military' && !Array.isArray(j.path);
+        const history = [];
+        for (const row of rows) {
+          if (!Array.isArray(row)) continue;
+          const lat = Number(row[1]);
+          const lon = Number(row[2]);
+          if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+          const alt = Number(row[3]);
+          history.push({
+            lat,
+            lon,
+            altM: Number.isFinite(alt) ? (feet ? alt * 0.3048 : alt) : 0,
+          });
+        }
+        this.trail.history = history;
+        this.trail.historyBuilt = null;
+      })
+      .catch(() => {});
+  }
+
+  /** History waypoints as flat-world points (rebuilt when the relief changes). */
+  _historyPoints(view) {
+    const h = this.trail.history;
+    if (!h?.length) return [];
+    const e = view.chunks.exaggeration;
+    if (this.trail.historyBuilt?.e === e) return this.trail.historyBuilt.pts;
+    const pts = [];
+    for (const w of h) {
+      const p = this.frame.geodeticToWorld(w.lat, w.lon);
+      if (p) pts.push(new THREE.Vector3(p.x, Math.max(w.altM, 0) * e, -p.y));
+    }
+    this.trail.historyBuilt = { e, pts };
+    return pts;
   }
 
   _buildLabels() {
