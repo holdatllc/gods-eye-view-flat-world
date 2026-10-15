@@ -685,6 +685,10 @@ export function createWindRendering({
       context = canvas.getContext('2d');
       container.appendChild(canvas);
     },
+    /** The current wind grid (read-only), for the flat world's own flow drawing. */
+    getField() {
+      return field;
+    },
     setField(next) {
       const nextField = next?.grid
         ? { ...next.grid, u: next.u, v: next.v }

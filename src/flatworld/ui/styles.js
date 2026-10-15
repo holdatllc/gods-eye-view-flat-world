@@ -103,7 +103,9 @@ body:not(.flatworld-active) .fw-credits { display: none; }
   font: 11px/1.45 ui-monospace, 'SF Mono', Menlo, monospace; color: #cfeef7; background: rgba(4, 14, 20, 0.86);
   border: 1px solid rgba(57, 225, 255, 0.35); border-radius: 10px; padding: 10px 12px; display: none; backdrop-filter: blur(8px); }
 body.flatworld-active .fw-panel { display: block; }
-body.flatworld-active #left-panel-stack { display: none !important; }
+/* DATA LAYERS / SCENES stay usable in flat (GLOBE LAYERS); the flat panel sits beside them. */
+body.flatworld-active:not(.fw-globe-panels) #left-panel-stack { display: none !important; }
+body.flatworld-active.fw-globe-panels #left-panel-stack { left: 312px !important; right: auto !important; }
 .fw-panel h3 { margin: 10px 0 5px; font-size: 10px; letter-spacing: 0.16em; color: #39e1ff; font-weight: 600; }
 .fw-panel h3:first-child { margin-top: 0; }
 .fw-panel h3.fw-section-title { cursor: pointer; user-select: none; }

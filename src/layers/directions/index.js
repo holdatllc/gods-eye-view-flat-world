@@ -1235,6 +1235,7 @@ export function createDirectionsLayer({ services, source }) {
       _stepPoints = new Cesium.PointPrimitiveCollection({
         blendOption: Cesium.BlendOption.TRANSLUCENT,
       });
+      _stepPoints.gevLayerId = 'directions';
       viewer.scene.primitives.add(_stepPoints);
       services.sprites.registerSpriteCollection('directions', _stepPoints);
       _stepPoints.show = false;

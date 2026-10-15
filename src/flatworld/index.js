@@ -31,6 +31,11 @@ import { createLiveSelection } from './ui/liveSelection.js';
 import { createFlatCockpit } from './ui/flatCockpit.js';
 import { FlightPath } from './nav/flightPath.js';
 import { GlobeEntityMirror } from './overlays/globeEntities.js';
+import {
+  GlobeLayerMirror,
+  installGlobeLayerControls,
+} from './overlays/globeLayers.js';
+import { WindFlow } from './overlays/windFlow.js';
 import { AircraftSprites } from './overlays/aircraftSprites.js';
 import { AircraftModels } from './overlays/aircraftModels.js';
 import { createFlatPresets } from './ui/flatPresets.js';
@@ -142,6 +147,13 @@ export function mountFlatWorld({ viewer, dataManager }) {
     // Nearby sites and space missions: the globe's own markers, drawn through the projection.
     const globeMarkers = new GlobeEntityMirror({ viewer, frame, dataManager });
     view.addLayer(globeMarkers);
+    // DATA LAYERS / SCENES (CCTV, cables, weather, quakes, ...): the globe layers' own drawing,
+    // re-drawn through the projection.
+    const globeLayers = new GlobeLayerMirror({ viewer, frame, dataManager });
+    view.addLayer(globeLayers);
+    // WIND: the globe's forecast grid, flowing through the projection.
+    const windFlow = new WindFlow({ frame, dataManager });
+    view.addLayer(windFlow);
     // VISUAL PRESETS and cockpit vision modes, as filters on the flat canvas.
     const presets = createFlatPresets({ view, viewer });
     // The globe's round scope vignette, following its SCOPE switch and feather.
@@ -342,9 +354,15 @@ export function mountFlatWorld({ viewer, dataManager }) {
         return;
       }
       const marker = globeMarkers.nearest(e.clientX, e.clientY, hitRadius(e));
+      const layerMarker = marker
+        ? null
+        : globeLayers.nearest(e.clientX, e.clientY, hitRadius(e));
       if (marker) {
         if (live.tracked) selection.deselect();
         globeMarkers.select(marker);
+      } else if (layerMarker) {
+        if (live.tracked) selection.deselect();
+        globeLayers.select(layerMarker);
       } else if (live.tracked) selection.deselect();
     });
     let hoverPending = false;
@@ -358,7 +376,10 @@ export function mountFlatWorld({ viewer, dataManager }) {
             ? labels.nearest(e.clientX, e.clientY, hitRadius(e))
             : null;
         labels.setHover(rec);
-        view.canvas.style.cursor = rec ? 'pointer' : '';
+        const layerHit =
+          !rec && e.buttons === 0 ? globeLayers.hover(e.clientX, e.clientY) : null;
+        if (rec) globeLayers.hover(-1e6, -1e6);
+        view.canvas.style.cursor = rec || layerHit ? 'pointer' : '';
         panel.showCursor(view.pick(e.clientX, e.clientY));
       });
     });
@@ -375,6 +396,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
     });
 
     installLiveExtras({ live, panel, host });
+    installGlobeLayerControls({ panel, mirror: globeLayers, wind: windFlow });
     world = {
       view,
       mode,
@@ -391,6 +413,8 @@ export function mountFlatWorld({ viewer, dataManager }) {
       cockpit,
       flightPath,
       globeMarkers,
+      globeLayers,
+      windFlow,
       presets,
       scope,
       planeIcons,

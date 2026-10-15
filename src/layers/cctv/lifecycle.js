@@ -71,6 +71,7 @@ export function createLifecycle({
       layerState._calibrationById = parts.calibration.loadCalibrationStore();
 
       layerState._billboards = new Cesium.BillboardCollection();
+      layerState._billboards.gevLayerId = 'cctv';
       layerState._viewer.scene.primitives.add(layerState._billboards);
       registerSpriteCollection('cctv', layerState._billboards);
 

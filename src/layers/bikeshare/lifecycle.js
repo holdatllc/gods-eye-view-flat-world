@@ -27,6 +27,7 @@ export function createLifecycle({
       layerState._pointCollection = new Cesium.PointPrimitiveCollection({
         blendOption: Cesium.BlendOption.TRANSLUCENT,
       });
+      layerState._pointCollection.gevLayerId = 'bikeshare';
       viewer.scene.primitives.add(layerState._pointCollection);
       registerSpriteCollection('bikeshare', layerState._pointCollection);
       layerState._pointCollection.show = false;
