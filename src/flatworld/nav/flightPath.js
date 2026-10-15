@@ -140,6 +140,16 @@ export class FlightPath {
 
   update(dt, view) {
     this.routes.update(dt, view);
+    // A new selection: drop the previous plane's route at once, then look up the new one.
+    const sel = this.live.tracked
+      ? `${this.live.tracked.kind}:${this.live.tracked.id}`
+      : '';
+    if (sel !== this.selKey) {
+      this.selKey = sel;
+      this._clear(sel ? 'Looking up the route…' : '');
+      this.key = '';
+      this.checkTimer = 1;
+    }
     this.checkTimer += dt;
     if (this.checkTimer > 1) {
       this.checkTimer = 0;

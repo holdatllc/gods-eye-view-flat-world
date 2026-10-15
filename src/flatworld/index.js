@@ -182,15 +182,9 @@ export function mountFlatWorld({ viewer, dataManager }) {
     mode.beforeExit = () => {
       cockpit.beforeExit();
       selection.beforeExit();
-      // Put the globe's layers back as they were. A plane still being followed keeps its layer
-      // on (the globe goes on following it). The switches run after the catalogue change has
+      // Put the globe's layers back exactly as they were. The switches run after the catalogue change has
       // settled, which could otherwise switch the satellite layer back on.
-      const t = live.tracked;
-      const keep = t && live.following ? t.kind : null;
-      const off = [
-        ...(satsTurnedOn ? ['satellites'] : []),
-        ...layersTurnedOn.filter((k) => k !== keep),
-      ];
+      const off = [...(satsTurnedOn ? ['satellites'] : []), ...layersTurnedOn];
       const catalog =
         globeSatCatalog && live.satelliteCatalog() === 'dense'
           ? live.setSatelliteCatalog(globeSatCatalog)
