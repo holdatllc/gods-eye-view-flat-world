@@ -32,6 +32,7 @@ import { createFlatCockpit } from './ui/flatCockpit.js';
 import { FlightPath } from './nav/flightPath.js';
 import { GlobeEntityMirror } from './overlays/globeEntities.js';
 import { createFlatPresets } from './ui/flatPresets.js';
+import { createFlatScope } from './ui/flatScope.js';
 
 function createToggle() {
   const toggle = document.createElement('button');
@@ -123,6 +124,8 @@ export function mountFlatWorld({ viewer, dataManager }) {
     view.addLayer(globeMarkers);
     // VISUAL PRESETS and cockpit vision modes, as filters on the flat canvas.
     const presets = createFlatPresets({ view, viewer });
+    // The globe's round scope vignette, following its SCOPE switch and feather.
+    const scope = createFlatScope({ view, mode });
     // Flat mode shows every tracked satellite (~11,500, Starlink included) at true height by
     // default: the layer is switched on, and the full catalogue applied whenever the layer is on
     // (also when it is switched on later, from any control) unless ALL SATELLITES was switched
@@ -346,6 +349,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
       flightPath,
       globeMarkers,
       presets,
+      scope,
     };
     Object.assign(api, world, {
       diagnostics: () => view.diagnostics(),

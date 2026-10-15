@@ -41,6 +41,9 @@ body:not(.flatworld-active) .fw-preset-overlay { display: none; }
   background: rgba(120, 20, 20, 0.85); border: 1px solid #ff8a8a; border-radius: 18px; padding: 8px 16px; }
 body.flatworld-active.cockpit-mode .fw-cockpit-exit { display: block; }
 body.flatworld-active.cockpit-mode .fw-toggle { display: flex; top: 60px; z-index: 200; }
+/* Scope vignette over the flat canvas (same keyhole as the globe's #scope-mask). */
+.fw-scope { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 1; }
+body:not(.flatworld-active) .fw-scope, body.cockpit-mode .fw-scope { display: none; }
 /* Flight-path labels (great circle vs flat straight line). */
 .fw-route-labels { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 3; }
 body:not(.flatworld-active) .fw-route-labels { display: none; }
