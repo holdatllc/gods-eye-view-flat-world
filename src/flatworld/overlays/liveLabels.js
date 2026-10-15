@@ -161,7 +161,8 @@ export class LiveLabels {
     // The globe's fleet-label wording (detection labels): formatFlightLevel at every altitude
     // above 0 m, nothing on the ground. Feet are only on the selected plane's card.
     if (rec.kind === 'flights' || rec.kind === 'military') {
-      const fl = rec.onGround ? '' : formatFlightLevel(rec.altitudeM);
+      // As the globe: no flight level only at or below 0 m (formatFlightLevel), whatever onGround says.
+      const fl = formatFlightLevel(rec.altitudeM);
       // Military labels carry the type first, as the globe's do ("H60 · FL006"; 'MIL' if unknown).
       const second =
         rec.kind === 'military'

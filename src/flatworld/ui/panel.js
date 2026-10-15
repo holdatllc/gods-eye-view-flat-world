@@ -573,13 +573,13 @@ export function createPanel({
   const planeModelsBtn = button(
     '3D PLANE MODELS',
     () => {
-      planeModels?.setEnabled(!planeModels.enabled);
+      planeModels?.setEnabledByUser(!planeModels.enabled);
       planeModelsBtn.classList.toggle('on', Boolean(planeModels?.enabled));
     },
-    true,
+    false,
   );
   planeModelsBtn.title =
-    "On: as on the globe, the nearest planes (up to 150, within 150 km, below 800 km camera height) are drawn as the globe's 3D airliner model instead of an icon.";
+    "As the globe's DISPLAY → 3D setting (off by default): the nearest planes (up to 150 per layer, within 150 km, below 800 km camera height) drawn as the globe's 3D airliner model instead of an icon. Costs frame rate in Safari.";
   const deadReckonBtn = button(
     'MOVE BETWEEN UPDATES',
     () => {
@@ -1095,6 +1095,7 @@ export function createPanel({
     for (const [m, b] of Object.entries(modeButtons))
       b.classList.toggle('on', view.controls.mode === m);
     allSatsBtn.classList.toggle('on', live.satelliteCatalog() === 'dense');
+    planeModelsBtn.classList.toggle('on', Boolean(planeModels?.enabled));
     for (const [k, b] of Object.entries(layerButtons)) {
       b.classList.toggle('on', live.isLayerOn(k));
       const n = live.records[k]?.length;

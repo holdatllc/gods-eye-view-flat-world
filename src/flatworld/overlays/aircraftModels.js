@@ -24,12 +24,16 @@ import { CLASS_SCALE_3D } from '../../data/aircraftClass.js';
 
 const KINDS = ['flights', 'military'];
 /** The glTF's nose relative to the overlay's heading axis (+X), found against the icons. */
-const NOSE_OFFSET = 0;
+const NOSE_OFFSET = Math.PI;
 
 export class AircraftModels {
   constructor({ live }) {
     this.live = live;
-    this.enabled = true;
+    // Off by default, following the globe's DISPLAY-rail "3D" (models3d) setting until the flat
+    // switch is used.
+    this.enabled = false;
+    this.userSet = false;
+    this.group.visible = false;
     this.parts = [];
     this.group = new THREE.Group();
     this.group.name = 'flatworld-aircraft-models';
@@ -45,6 +49,25 @@ export class AircraftModels {
   attach(view) {
     this.view = view;
     view.scene.add(this.group);
+  }
+
+  /** The globe's own 3D-model setting for the flight layers. */
+  _globeModels3d() {
+    for (const k of KINDS) {
+      try {
+        if (this.live.layerModule(k)?.getParams?.()?.models3d === true)
+          return true;
+      } catch {
+        /* layer not ready */
+      }
+    }
+    return false;
+  }
+
+  /** From the flat world's switch: overrides the globe's setting from now on. */
+  setEnabledByUser(on) {
+    this.userSet = true;
+    this.setEnabled(on);
   }
 
   setEnabled(on) {
@@ -66,7 +89,11 @@ export class AircraftModels {
         roughness: 0.55,
         metalness: 0.1,
       });
-      const mesh = new THREE.InstancedMesh(geometry, material, MODEL_MAX + 1);
+      const mesh = new THREE.InstancedMesh(
+        geometry,
+        material,
+        2 * MODEL_MAX + 1,
+      );
       mesh.count = 0;
       mesh.frustumCulled = false;
       this.parts.push(mesh);
@@ -81,6 +108,14 @@ export class AircraftModels {
   }
 
   update(dt, view) {
+    if (!this.userSet) {
+      const now = performance.now();
+      if (now - (this._globeAt || 0) > 1000) {
+        this._globeAt = now;
+        const g = this._globeModels3d();
+        if (g !== this.enabled) this.setEnabled(g);
+      }
+    }
     if (!this.enabled || !this.parts.length) return;
     const live = this.live;
     const cam = view.camera.position;
@@ -101,7 +136,14 @@ export class AircraftModels {
       }
     }
     cand.sort((a, b) => a[0] - b[0]);
-    const chosen = new Set(cand.slice(0, MODEL_MAX).map((c) => c[1]));
+    // Capped per layer, as on the globe (each flight layer has its own MODEL_MAX).
+    const perKind = { flights: 0, military: 0 };
+    const chosen = new Set();
+    for (const [, r] of cand) {
+      if (perKind[r.kind] >= MODEL_MAX) continue;
+      perKind[r.kind] += 1;
+      chosen.add(r);
+    }
     for (const r of this.modeled) if (!chosen.has(r)) r.modeled = false;
     this.modeled = chosen;
     const origin = live.group.position;
