@@ -9,7 +9,7 @@ body.flatworld-active #cesium-credits,
 body.flatworld-active #safe-frame-overlay,
 body.flatworld-active #cockpit-cloud-effects,
 body.flatworld-active #first-run-launcher,
-body.flatworld-active #intel-hud { display: none !important; }
+body.flatworld-active:not(.fw-intel-hud) #intel-hud { display: none !important; }
 /* The cockpit HUD shows in the flat world only while the cockpit is open (flown by flatCockpit.js). */
 body.flatworld-active:not(.cockpit-mode) #cockpit-hud { display: none !important; }
 body.flatworld-active.cockpit-mode .fw-panel,
@@ -26,6 +26,12 @@ body.flatworld-active.cockpit-mode .fw-credits { display: none !important; }
 .fw-globe-label { position: absolute; left: 0; top: 0; margin: -7px 0 0 9px; white-space: nowrap;
   font: 600 10px ui-monospace, 'SF Mono', Menlo, monospace; color: #fff; padding: 1px 5px; border-radius: 3px;
   background: rgba(4, 14, 20, 0.78); border-left: 2px solid var(--fw-accent, #ffb84d); }
+/* Visual-preset overlays on the flat canvas (the filter itself is set on the canvas). */
+.fw-preset-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+body:not(.flatworld-active) .fw-preset-overlay { display: none; }
+.fw-preset-overlay[data-look='scanlines'] { background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.22) 0 1px, transparent 1px 3px); }
+.fw-preset-overlay[data-look='tube'] { background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.85) 100%); }
+.fw-preset-overlay[data-look='haze'] { background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.08), rgba(235, 245, 255, 0.28)); }
 /* Flight-path labels (great circle vs flat straight line). */
 .fw-route-labels { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 3; }
 body:not(.flatworld-active) .fw-route-labels { display: none; }

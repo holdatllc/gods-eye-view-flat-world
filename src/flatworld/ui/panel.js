@@ -57,6 +57,7 @@ export function createPanel({
   labels,
   flightPath = null,
   globeMarkers = null,
+  presets = null,
 }) {
   const panel = el('div', {
     class: 'fw-panel',
@@ -437,6 +438,30 @@ export function createPanel({
   flightPathBtn.title =
     "Selected aircraft: draw its route between origin and destination airports, both ways — the globe's great circle (cyan) and the flat map's straight line (amber), each labelled with its length.";
   const flightPathNote = el('div', { class: 'fw-note' });
+  const presetsBtn = button(
+    'VISUAL PRESETS',
+    () => {
+      presets?.setEnabled(!presets.enabled);
+      presetsBtn.classList.toggle('on', Boolean(presets?.enabled));
+    },
+    Boolean(presets?.enabled),
+  );
+  presetsBtn.title =
+    'Apply the VISUAL PRESETS look (CRT, night vision, thermal, anime, noir, snow) and the cockpit vision modes to the flat world.';
+  const intelHudBtn = button(
+    'INTEL HUD',
+    () => {
+      document.body.classList.toggle('fw-intel-hud');
+      intelHudBtn.classList.toggle(
+        'on',
+        document.body.classList.contains('fw-intel-hud'),
+      );
+    },
+    true,
+  );
+  document.body.classList.add('fw-intel-hud');
+  intelHudBtn.title =
+    "Show the globe's intel HUD (time, position, MGRS, altitude) over the flat world; it reads the view centre.";
   const globeMarkersBtn = button(
     'SITES & MISSIONS',
     () => {
@@ -452,6 +477,7 @@ export function createPanel({
     el('div', { class: 'fw-row' }, namesBtn, allSatsBtn),
     el('div', { class: 'fw-row' }, satGroundBtn),
     el('div', { class: 'fw-row' }, flightPathBtn, globeMarkersBtn),
+    el('div', { class: 'fw-row' }, presetsBtn, intelHudBtn),
     flightPathNote,
     layerStatus,
     el(

@@ -31,6 +31,7 @@ import { createLiveSelection } from './ui/liveSelection.js';
 import { createFlatCockpit } from './ui/flatCockpit.js';
 import { FlightPath } from './nav/flightPath.js';
 import { GlobeEntityMirror } from './overlays/globeEntities.js';
+import { createFlatPresets } from './ui/flatPresets.js';
 
 function createToggle() {
   const toggle = document.createElement('button');
@@ -113,6 +114,8 @@ export function mountFlatWorld({ viewer, dataManager }) {
     // Nearby sites and space missions: the globe's own markers, drawn through the projection.
     const globeMarkers = new GlobeEntityMirror({ viewer, frame, dataManager });
     view.addLayer(globeMarkers);
+    // VISUAL PRESETS and cockpit vision modes, as filters on the flat canvas.
+    const presets = createFlatPresets({ view, viewer });
     // Flat mode shows every tracked satellite (~11,500, Starlink included) at true height by
     // default: the layer is switched on, and the full catalogue applied whenever the layer is on
     // (also when it is switched on later, from any control) unless ALL SATELLITES was switched
@@ -233,6 +236,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
       labels,
       flightPath,
       globeMarkers,
+      presets,
     });
 
     // Picking: a click selects the aircraft, ship or satellite nearest the cursor (every drawn
@@ -320,6 +324,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
       cockpit,
       flightPath,
       globeMarkers,
+      presets,
     };
     Object.assign(api, world, {
       diagnostics: () => view.diagnostics(),
