@@ -367,6 +367,17 @@ export function isLikelyCalgaryCoordinate(lat, lon) {
   );
 }
 
+/** New York City's five boroughs, with slack for the harbor and city line. */
+export function isLikelyNycCoordinate(lat, lon) {
+  return (
+    isPlausibleLatLon(lat, lon) &&
+    lat >= 40.45 &&
+    lat <= 40.95 &&
+    lon >= -74.3 &&
+    lon <= -73.65
+  );
+}
+
 /** Mainland Norway, with slack for the coast and the Finnmark border. */
 export function isLikelyNorwayCoordinate(lat, lon) {
   return (
@@ -552,4 +563,15 @@ export function normalizeSourceItem(item) {
     // Data, which never sets this field). Passed through as-is to the client.
     poseSource: item.poseSource === 'curated' ? 'curated' : undefined,
   };
+}
+
+/** City of Toronto bounding box (Steeles to the lake, Etobicoke to Scarborough). */
+export function isLikelyTorontoCoordinate(lat, lon) {
+  return (
+    isPlausibleLatLon(lat, lon) &&
+    lat >= 43.55 &&
+    lat <= 43.9 &&
+    lon >= -79.7 &&
+    lon <= -79.1
+  );
 }

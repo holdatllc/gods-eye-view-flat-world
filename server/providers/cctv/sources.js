@@ -55,6 +55,12 @@ import {
   DEFAULT_CALGARY_MAX_SOURCES,
   CALGARY_DOWNTOWN,
   CALGARY_MAX_CATALOG_BYTES,
+  TORONTO_RESCU_LIST_URL,
+  TORONTO_RESCU_IMAGE_ORIGIN,
+  DEFAULT_TORONTO_MAX_SOURCES,
+  TORONTO_DOWNTOWN,
+  TORONTO_GROUND_ELEVATION_M,
+  TORONTO_MAX_CATALOG_BYTES,
   CCTV_SOURCE_FETCH_TIMEOUT_MS,
   DELDOT_CCTV_URL,
   DEFAULT_DELDOT_MAX_SOURCES,
@@ -65,6 +71,13 @@ import {
   DEFAULT_VEGVESEN_MAX_SOURCES,
   VEGVESEN_MAX_CATALOG_BYTES,
   NORWAY_ANCHORS,
+  NYC_CAMERAS_URL,
+  NYC_IMAGE_URL,
+  NYC_CAMERA_ID_RE,
+  DEFAULT_NYC_MAX_SOURCES,
+  NYC_MAX_CATALOG_BYTES,
+  NYC_GROUND_ELEVATION_M,
+  NYC_ANCHORS,
 } from './constants.js';
 import {
   toFiniteNumber,
@@ -82,13 +95,18 @@ import {
   isLikelyTexasCoordinate,
   isLikelyNswCoordinate,
   isLikelyCalgaryCoordinate,
+  isLikelyNycCoordinate,
   isLikelyNorwayCoordinate,
+  isLikelyTorontoCoordinate,
   cameraDisplayCode,
   rowArrayToObject,
   prioritizeSources,
 } from './normalize.js';
 import { directionToHeading } from '../../../src/data/directionText.js';
-import { readResponseJsonCapped } from '../common/http.js';
+import {
+  readResponseJsonCapped,
+  readResponseTextCapped,
+} from '../common/http.js';
 /**
  * Fetch and parse Austin traffic camera records from the city Open Data portal.
  *
@@ -1858,6 +1876,320 @@ export async function loadVegvesenSourcesFromOpenData() {
   } catch (error) {
     console.warn(
       '[CCTV] Vegvesen camera download error:',
+      error?.message || error,
+    );
+    return [];
+  }
+}
+
+const NYC_BOROUGHS = new Set([
+  'Manhattan',
+  'Brooklyn',
+  'Queens',
+  'Bronx',
+  'Staten Island',
+]);
+
+/** NYC TMC publishes `isOnline` as the strings "true"/"false". */
+export function nycCameraIsOnline(value) {
+  return (
+    value === true ||
+    String(value ?? '')
+      .trim()
+      .toLowerCase() === 'true'
+  );
+}
+
+/**
+ * Label for one NYC camera: the intersection an operator recognises
+ * ("Central Park West @ 86 St"). The catalog's `area` is the borough, not
+ * a facing, and is not part of the name.
+ *
+ * @param {object} record - Raw TMC camera row.
+ * @param {string} cameraId - Derived stable id.
+ * @returns {string}
+ */
+export function nycCameraName(record, cameraId) {
+  const name = String(record?.name ?? '').trim();
+  if (name) return name;
+  const short = String(cameraId || '')
+    .replace(/^nyc-/, '')
+    .slice(0, 8);
+  return short ? `NYC Camera ${short}` : 'NYC Camera';
+}
+
+/**
+ * One NYC DOT TMC camera row -> one catalog source, or null.
+ *
+ * Frame URLs are synthesized from a validated UUID on the pinned TMC image
+ * origin. The payload's `imageUrl` is ignored so a catalog edit cannot steer
+ * the frame proxy off-host. There is no heading in the feed; headings use
+ * the shared id-hash fallback at low confidence, like Calgary and Fintraffic.
+ *
+ * @param {object} record - Raw TMC camera row.
+ * @returns {?object}
+ */
+export function nycCameraToSource(record) {
+  if (!record || typeof record !== 'object') return null;
+  if (!nycCameraIsOnline(record.isOnline)) return null;
+
+  const lat = toFiniteNumber(record.latitude);
+  const lon = toFiniteNumber(record.longitude);
+  if (!isLikelyNycCoordinate(lat, lon)) return null;
+
+  const uuid = String(record.id ?? '').trim();
+  if (!NYC_CAMERA_ID_RE.test(uuid)) return null;
+  const cameraId = `nyc-${uuid.toLowerCase()}`;
+  const imageUrl = NYC_IMAGE_URL(uuid);
+  const name = nycCameraName(record, cameraId);
+  const area = String(record.area ?? '').trim();
+  const city = NYC_BOROUGHS.has(area) ? area : 'New York';
+
+  return {
+    id: cameraId,
+    name,
+    city,
+    cityId: 'nyc',
+    provider: 'NYC DOT Traffic Management Center',
+    lat,
+    lon,
+    headingDeg: fallbackHeadingFromId(cameraId),
+    headingConfidence: 'low',
+    pitchDeg: -18,
+    fovDeg: 44,
+    rangeM: 145,
+    mountHeightM: 8,
+    groundElevationM: NYC_GROUND_ELEVATION_M,
+    feedType: 'image',
+    url: imageUrl,
+    snapshotUrl: imageUrl,
+    sourceKind: 'nyc-dot-tmc',
+    license: 'Public NYC DOT Traffic Management Center traffic camera',
+    code: cameraDisplayCode(name.toUpperCase()),
+  };
+}
+
+/**
+ * Fetch NYC DOT Traffic Management Center cameras from the keyless
+ * `webcams.nyctmc.org` catalog. Frames are stills on that same host,
+ * registered from a validated UUID rather than from the payload URL.
+ *
+ * @returns {Promise<Array<object>>} Normalized camera source objects.
+ */
+export async function loadNycSourcesFromOpenData() {
+  try {
+    const endpoint = process.env.CCTV_NYC_CAMERAS_URL || NYC_CAMERAS_URL;
+    const resp = await fetch(endpoint, {
+      headers: { Accept: 'application/json' },
+      redirect: 'manual',
+      signal: AbortSignal.timeout(CCTV_SOURCE_FETCH_TIMEOUT_MS),
+    });
+    const discard = async () => {
+      try {
+        await resp.body?.cancel();
+      } catch {
+        /* no-op */
+      }
+      return [];
+    };
+    if (resp.status >= 300 && resp.status < 400) {
+      console.warn('[CCTV] NYC catalog redirected; redirects are not followed');
+      return discard();
+    }
+    if (!resp.ok) {
+      console.warn('[CCTV] NYC camera download failed:', resp.status);
+      return discard();
+    }
+    const rows = await readResponseJsonCapped(resp, NYC_MAX_CATALOG_BYTES);
+    if (!Array.isArray(rows)) return [];
+    const cameras = [];
+    const seen = new Set();
+    for (const record of rows) {
+      const camera = nycCameraToSource(record);
+      if (!camera || seen.has(camera.id)) continue;
+      seen.add(camera.id);
+      cameras.push(camera);
+    }
+    const maxRaw = Number(
+      process.env.CCTV_NYC_MAX_SOURCES || DEFAULT_NYC_MAX_SOURCES,
+    );
+    const maxCount = Number.isFinite(maxRaw)
+      ? Math.max(8, Math.min(400, Math.floor(maxRaw)))
+      : DEFAULT_NYC_MAX_SOURCES;
+    const prioritized = prioritizeSources(cameras, maxCount, NYC_ANCHORS);
+    console.log(
+      `[CCTV] Loaded NYC camera sources: ${cameras.length} (using nearest ${prioritized.length})`,
+    );
+    return prioritized;
+  } catch (error) {
+    console.warn('[CCTV] NYC camera download error:', error?.message || error);
+    return [];
+  }
+}
+
+/**
+ * The JSONP envelope the City of Toronto wraps its camera list in. Anchored at
+ * both ends, so only that exact callback is unwrapped — a payload that merely
+ * contains the name somewhere is not treated as the list.
+ */
+const RESCU_JSONP = /^jsonTMCEarthCamerasCallback\(([\s\S]*)\)\s*;?$/;
+
+/**
+ * Unwrap the RESCU camera list. The portal serves the list as JSONP; should it
+ * ever drop the wrapper, the bare JSON document still parses. Anything else —
+ * a foreign callback, a truncated body, an error page — yields no cameras
+ * rather than a thrown loader.
+ *
+ * @param {string} text - Raw response body.
+ * @returns {Array<object>} The `Data` rows, or [] when the body is unusable.
+ */
+export function parseRescuCameraList(text) {
+  const body = String(text ?? '').trim();
+  if (!body) return [];
+  const unwrapped = RESCU_JSONP.exec(body)?.[1] ?? body;
+  try {
+    const parsed = JSON.parse(unwrapped);
+    const rows = parsed?.Data ?? parsed?.data;
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Convert one RESCU list row into a camera source.
+ *
+ * The row carries no URL: the frame URL is built from the documented
+ * `loc####.jpg` convention and a camera number validated as plain digits, so
+ * the frame proxy is pinned to the city origin by construction and no upstream
+ * field — present or planted — can steer it.
+ *
+ * No compass heading exists in this dataset. `D1`-`D4` are the directions of
+ * the *comparison* images (static reference stills captured in 2016, served
+ * from a different path); the live frame is one pan-tilt-zoom camera pointing
+ * wherever the operator left it. Treating those letters as a facing would put
+ * a confident, wrong bearing on every camera in the city, so every row takes
+ * the id-hash fallback and the low-confidence pose, as headingless Austin,
+ * TfL, Fintraffic and Calgary cameras do.
+ *
+ * @param {object} row - One entry from the RESCU `Data` array.
+ * @returns {object|null} Normalized camera source, or null when unusable.
+ */
+export function torontoCameraToSource(row) {
+  if (!row || typeof row !== 'object') return null;
+  const number = String(row.Number ?? row.number ?? '').trim();
+  // Plain digits only: a number is about to become a URL path segment.
+  if (!/^\d{1,6}$/.test(number)) return null;
+
+  const lat = toFiniteNumber(row.Latitude ?? row.latitude);
+  const lon = toFiniteNumber(row.Longitude ?? row.longitude);
+  if (!isLikelyTorontoCoordinate(lat, lon)) return null;
+
+  const cameraId = `toronto-${number}`;
+  // The feed's own label, verbatim. It is upper-case ("MCCOWAN RD", "ST
+  // HELEN'S AVE"); title-casing it would mangle more names than it fixed.
+  const name =
+    String(row.Name ?? row.name ?? '')
+      .replace(/\s+/g, ' ')
+      .trim() || `Toronto Camera ${number}`;
+
+  return {
+    id: cameraId,
+    name,
+    city: 'Toronto',
+    cityId: 'toronto',
+    provider: 'City of Toronto',
+    lat,
+    lon,
+    headingDeg: fallbackHeadingFromId(cameraId),
+    headingConfidence: 'low',
+    pitchDeg: -18,
+    fovDeg: 44,
+    rangeM: 145,
+    mountHeightM: 8,
+    groundElevationM: TORONTO_GROUND_ELEVATION_M,
+    feedType: 'image',
+    url: `${TORONTO_RESCU_IMAGE_ORIGIN}loc${number}.jpg`,
+    snapshotUrl: `${TORONTO_RESCU_IMAGE_ORIGIN}loc${number}.jpg`,
+    sourceKind: 'toronto-rescu-open-data',
+    license:
+      'Contains information licensed under the Open Government Licence – Toronto',
+    // Unselected-label code: the intersection, so a camera at rest reads as a
+    // place rather than as its id.
+    code: cameraDisplayCode(name.toUpperCase()),
+  };
+}
+
+/**
+ * Fetch City of Toronto RESCU traffic cameras from the City's open data
+ * portal, keyless. One JSONP list for the whole city; frames are stills on the
+ * same portal origin.
+ *
+ * The list fetch refuses redirects (`redirect: 'manual'`) so the list host
+ * cannot be steered, and caps the body it will buffer.
+ *
+ * Attribution: Open Government Licence – Toronto, registered in
+ * src/data/dataCredits.js.
+ *
+ * @returns {Promise<Array<object>>} Normalized camera source objects.
+ */
+export async function loadTorontoSourcesFromOpenData() {
+  try {
+    const endpoint =
+      process.env.CCTV_TORONTO_LIST_URL || TORONTO_RESCU_LIST_URL;
+    const resp = await fetch(endpoint, {
+      headers: { Accept: 'application/json, text/javascript' },
+      redirect: 'manual',
+      signal: AbortSignal.timeout(CCTV_SOURCE_FETCH_TIMEOUT_MS),
+    });
+    // A response this loader will not read still owns its transport until the
+    // body is released, so every rejection path cancels before returning.
+    const discard = async () => {
+      try {
+        await resp.body?.cancel();
+      } catch {
+        /* no-op */
+      }
+      return [];
+    };
+    if (resp.status >= 300 && resp.status < 400) {
+      console.warn(
+        '[CCTV] Toronto camera list redirected; redirects are not followed',
+      );
+      return discard();
+    }
+    if (!resp.ok) {
+      console.warn('[CCTV] Toronto camera download failed:', resp.status);
+      return discard();
+    }
+    const text = await readResponseTextCapped(resp, TORONTO_MAX_CATALOG_BYTES);
+    const rows = parseRescuCameraList(text);
+    if (!rows.length) return [];
+
+    const cameras = [];
+    const seen = new Set();
+    for (const record of rows) {
+      const camera = torontoCameraToSource(record);
+      if (!camera || seen.has(camera.id)) continue;
+      seen.add(camera.id);
+      cameras.push(camera);
+    }
+    const maxRaw = Number(
+      process.env.CCTV_TORONTO_MAX_SOURCES || DEFAULT_TORONTO_MAX_SOURCES,
+    );
+    const maxCount = Number.isFinite(maxRaw)
+      ? Math.max(8, Math.min(500, Math.floor(maxRaw)))
+      : DEFAULT_TORONTO_MAX_SOURCES;
+    const prioritized = prioritizeSources(cameras, maxCount, [
+      TORONTO_DOWNTOWN,
+    ]);
+    console.log(
+      `[CCTV] Loaded Toronto camera sources: ${cameras.length} (using nearest ${prioritized.length})`,
+    );
+    return prioritized;
+  } catch (error) {
+    console.warn(
+      '[CCTV] Toronto camera download error:',
       error?.message || error,
     );
     return [];
