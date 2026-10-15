@@ -155,7 +155,14 @@ export class LiveLabels {
   }
 
   _labelText(rec) {
-    return String(rec.label || rec.id || '').slice(0, 28);
+    const name = String(rec.label || rec.id || '').slice(0, 28);
+    // Aircraft read as on the globe: callsign and flight level ("AAL299 FL390").
+    if (rec.kind === 'flights' || rec.kind === 'military') {
+      if (rec.onGround) return `${name} GND`;
+      if (Number.isFinite(rec.altitudeM))
+        return `${name} FL${String(Math.max(0, Math.round((rec.altitudeM * 3.28084) / 100))).padStart(3, '0')}`;
+    }
+    return name;
   }
 
   _width(text) {
@@ -366,7 +373,39 @@ export class LiveLabels {
       ctx.arc(hp[0], hp[1], 9, 0, Math.PI * 2);
       ctx.stroke();
     }
+    // Selected object: cyan corner brackets, as on the globe.
+    const tr = this._trackedRec();
+    const tp = tr && pos.get(tr);
+    if (tp) {
+      const r = 17;
+      const l = 6;
+      ctx.strokeStyle = '#00dcff';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      for (const [sx, sy] of [
+        [-1, -1],
+        [1, -1],
+        [1, 1],
+        [-1, 1],
+      ]) {
+        const cx = tp[0] + sx * r;
+        const cy = tp[1] + sy * r;
+        ctx.moveTo(cx, cy - sy * l);
+        ctx.lineTo(cx, cy);
+        ctx.lineTo(cx - sx * l, cy);
+      }
+      ctx.stroke();
+    }
     this._updateCard(pos);
+    // Callout connector from the selected object up to its card.
+    if (tp && this.cardAnchor) {
+      ctx.strokeStyle = 'rgba(0, 220, 255, 0.85)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(tp[0], tp[1] - 19);
+      ctx.lineTo(this.cardAnchor[0], this.cardAnchor[1]);
+      ctx.stroke();
+    }
   }
 
   _trackedRec() {
@@ -464,10 +503,16 @@ export class LiveLabels {
     const ch = this.card.offsetHeight || 90;
     let x;
     let y;
+    this.cardAnchor = null;
     if (p) {
-      x = p[0] + 22;
-      y = p[1] - ch / 2;
-      if (x + cw > this.cssW - 8) x = p[0] - 22 - cw;
+      // Callout above the object, as on the globe; beside it when there is no room above.
+      x = p[0] - cw / 2;
+      y = p[1] - ch - 48;
+      if (y < 60) {
+        x = p[0] + 26;
+        y = p[1] - ch / 2;
+        if (x + cw > this.cssW - 8) x = p[0] - 26 - cw;
+      }
     } else {
       // Off screen: dock the card at the bottom centre instead of losing it.
       x = (this.cssW - cw) / 2;
@@ -476,6 +521,7 @@ export class LiveLabels {
     x = Math.min(Math.max(x, 8), Math.max(8, this.cssW - cw - 8));
     y = Math.min(Math.max(y, 60), Math.max(60, this.cssH - ch - 100));
     this.card.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+    if (p && y + ch <= p[1] - 19) this.cardAnchor = [p[0], y + ch];
   }
 
   destroy() {

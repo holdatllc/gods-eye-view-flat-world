@@ -567,6 +567,7 @@ export class LiveOverlay {
           const dy = vn * n.y + ve * east.y;
           yaw = Math.atan2(dy, dx);
         }
+        r.yaw = yaw;
         q.setFromAxisAngle(UP_AXIS, yaw);
         const dist = p.distanceTo(cam);
         const size = Math.max(
