@@ -51,3 +51,26 @@ export function getFlatShareView() {
     return null;
   }
 }
+
+// Flat world: the DRAW tool's input while it is drawing ({ active(), click(p), move(p),
+// finish() } with p = {lat, lon, height}); the flat world feeds it map clicks.
+let drawSink = null;
+
+export function setFlatDrawSink(sink) {
+  drawSink = sink || null;
+}
+
+export function getFlatDrawSink() {
+  return drawSink;
+}
+
+// Whether the flat world is shown (the globe is paused and hidden behind it).
+let flatShown = false;
+
+export function setFlatWorldShown(shown) {
+  flatShown = Boolean(shown);
+}
+
+export function isFlatWorldShown() {
+  return flatShown;
+}

@@ -12,6 +12,7 @@ import {
 } from '../../overlays/worldOverlay.js';
 import {
   setFlatProjector,
+  setFlatWorldShown,
   tickFlatFrame,
 } from '../../overlays/flatProjection.js';
 
@@ -108,6 +109,7 @@ export class OverlayBridge {
 
   setActive(active) {
     this.active = Boolean(active);
+    setFlatWorldShown(this.active);
     this._apply();
   }
 

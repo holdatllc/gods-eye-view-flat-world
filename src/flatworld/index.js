@@ -37,8 +37,12 @@ import {
 } from './overlays/globeLayers.js';
 import { WindFlow } from './overlays/windFlow.js';
 import { OverlayBridge } from './overlays/overlayBridge.js';
-import { setFlatShareView } from '../overlays/flatProjection.js';
+import {
+  setFlatShareView,
+  getFlatDrawSink,
+} from '../overlays/flatProjection.js';
 import { installFlatToolbar } from './ui/flatToolbar.js';
+import { FlatCelestialRing } from './overlays/celestialRingFlat.js';
 import { AircraftSprites } from './overlays/aircraftSprites.js';
 import { AircraftModels } from './overlays/aircraftModels.js';
 import { createFlatPresets } from './ui/flatPresets.js';
@@ -122,7 +126,10 @@ export function mountFlatWorld({ viewer, dataManager }) {
     view.addLayer(routes);
     const buildings = new BuildingsLayer({ frame });
     view.addLayer(buildings);
-    view.addLayer(new SkyBodies({ frame }));
+    const sky = new SkyBodies({ frame });
+    view.addLayer(sky);
+    // CELESTIAL: the globe's sun/moon ring around the flat disc, from the sky lane's positions.
+    view.addLayer(new FlatCelestialRing({ frame, sky }));
     const wall = new WallLayer({ frame });
     view.addLayer(wall);
 
@@ -356,10 +363,30 @@ export function mountFlatWorld({ viewer, dataManager }) {
     view.canvas.addEventListener('pointerdown', (e) => {
       down = { x: e.clientX, y: e.clientY };
     });
+    // DISPLAY ▸ DRAW: map clicks become the draw tool's points (lat/lon from the flat terrain).
+    const drawSink = () => {
+      const sink = getFlatDrawSink();
+      return sink?.active() ? sink : null;
+    };
+    const geoAt = (e) => {
+      const p = view.pick(e.clientX, e.clientY);
+      const d = p?.domain;
+      return d?.domain === DOMAIN_GPS
+        ? { lat: d.lat, lon: d.lon, height: Number.isFinite(d.height) ? d.height : 0 }
+        : null;
+    };
+    view.controls.drawing = () => Boolean(drawSink());
+    view.canvas.addEventListener('dblclick', () => drawSink()?.finish());
     view.canvas.addEventListener('pointerup', (e) => {
       if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4)
         return;
       if (cockpit.active()) return;
+      const sink = drawSink();
+      if (sink) {
+        const p = geoAt(e);
+        if (p) sink.click(p);
+        return;
+      }
       if (routes.measuring) {
         const p = view.pick(e.clientX, e.clientY);
         if (p) routes.addPoint(p);
@@ -400,6 +427,11 @@ export function mountFlatWorld({ viewer, dataManager }) {
       hoverPending = true;
       requestAnimationFrame(() => {
         hoverPending = false;
+        const sink = e.buttons === 0 ? drawSink() : null;
+        if (sink) {
+          sink.move(geoAt(e));
+          globeLayers.timer = Math.max(globeLayers.timer, 0.9);
+        }
         const rec =
           e.buttons === 0 && !routes.measuring
             ? labels.nearest(e.clientX, e.clientY, hitRadius(e))

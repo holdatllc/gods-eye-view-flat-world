@@ -31,6 +31,7 @@
  */
 import * as Cesium from 'cesium';
 import { pickWorldFromScreen } from './annotationResolver.js';
+import { setFlatDrawSink } from '../overlays/flatProjection.js';
 import {
   claimPointer,
   pointerOwner,
@@ -186,7 +187,9 @@ export function initDrawTool({ viewer, annotations }) {
   };
   const onClick = (event) => {
     if (!session || destroyed) return;
-    const p = worldAt(event.position);
+    addWorldVertex(worldAt(event.position));
+  };
+  const addWorldVertex = (p) => {
     if (!p) return;
     const { added, reason } = addVertex(session, p);
     if (added) {
@@ -204,7 +207,10 @@ export function initDrawTool({ viewer, annotations }) {
   };
   const onMove = (event) => {
     if (!session || session.shape === 'pin' || destroyed) return;
-    const p = worldAt(event.endPosition);
+    moveCursorTo(worldAt(event.endPosition));
+  };
+  const moveCursorTo = (p) => {
+    if (!session || session.shape === 'pin' || destroyed) return;
     cursor = p
       ? Cesium.Cartesian3.fromDegrees(p.lon, p.lat, p.height || 0)
       : null;
@@ -244,6 +250,14 @@ export function initDrawTool({ viewer, annotations }) {
       return null;
     }
   };
+  // The flat world draws on its own map (the globe canvas is hidden there): it hands this tool
+  // the clicked positions directly.
+  setFlatDrawSink({
+    active: () => active && !destroyed && Boolean(session),
+    click: (p) => addWorldVertex(p),
+    move: (p) => moveCursorTo(p),
+    finish: () => void finish(),
+  });
   const cancel = () => {
     if (!session) return;
     generation += 1;
@@ -502,6 +516,7 @@ export function initDrawTool({ viewer, annotations }) {
       generation += 1;
       if (active) setActive(false);
       destroyed = true;
+      setFlatDrawSink(null);
       releaseSceneHandler();
       releasePointer(lease);
       lease = null;

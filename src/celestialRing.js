@@ -1,5 +1,6 @@
 import * as Cesium from 'cesium';
 import { governorRequestRender } from './renderGovernor.js';
+import { isFlatWorldShown } from './overlays/flatProjection.js';
 
 /** Outer edge of the existing NVG/FLIR keyhole in normalized shader space. */
 export const KEYHOLE_OUTER_RADIUS = 1.05;
@@ -289,7 +290,7 @@ export function projectEarthDiscToViewport(
 }
 
 /** Draw one tapered orbital arc around a celestial marker. */
-function drawTaperedArc(ctx, cx, cy, radius, angle, rgb, strength) {
+export function drawTaperedArc(ctx, cx, cy, radius, angle, rgb, strength) {
   const span = 0.82;
   const segments = 18;
   ctx.save();
@@ -312,7 +313,7 @@ function drawTaperedArc(ctx, cx, cy, radius, angle, rgb, strength) {
 }
 
 /** Draw the soft directional rays cast inward from the sun marker. */
-function drawSunRays(ctx, cx, cy, radius, innerRadius, angle) {
+export function drawSunRays(ctx, cx, cy, radius, innerRadius, angle) {
   const sx = cx + Math.cos(angle) * radius;
   const sy = cy + Math.sin(angle) * radius;
   ctx.save();
@@ -363,7 +364,7 @@ function drawSunRays(ctx, cx, cy, radius, innerRadius, angle) {
 }
 
 /** Draw a restrained cool haze around the moon sector. */
-function drawMoonHaze(ctx, cx, cy, radius, angle) {
+export function drawMoonHaze(ctx, cx, cy, radius, angle) {
   const mx = cx + Math.cos(angle) * radius;
   const my = cy + Math.sin(angle) * radius;
   const haze = ctx.createRadialGradient(mx, my, 0, mx, my, radius * 0.22);
@@ -516,6 +517,8 @@ export class CelestialRing {
    * @returns {boolean} Whether a valid camera flight was started.
    */
   focusFullGlobe({ duration = 2.4 } = {}) {
+    // The flat world frames its own whole disc for CELESTIAL; the paused globe stays put.
+    if (isFlatWorldShown()) return true;
     const canvas = this.viewer.scene.canvas;
     const height = canvas.clientHeight || canvas.height;
     const cartographic = this.viewer.camera.positionCartographic;
@@ -563,7 +566,9 @@ export class CelestialRing {
       complete: finishFocus,
       cancel: () => {
         finishFocus();
-        if (!this.isGlobeFullyVisible()) this._autoDisable();
+        // The flat world finishes the hidden camera's flights itself; that is not a cancel.
+        if (!isFlatWorldShown() && !this.isGlobeFullyVisible())
+          this._autoDisable();
       },
     });
     return true;
@@ -725,6 +730,13 @@ export class CelestialRing {
   /** Per-frame camera projection with GPU-composited cached effect layers. */
   _draw() {
     if (!this.enabled || !this._sunCtx || !this._moonCtx) return;
+    // The flat world draws its own ring (its camera, not the paused globe's, frames the view),
+    // so the hidden globe must not judge the framing and switch CELESTIAL off.
+    // Its CELESTIAL button then switches the ring off on the next press, as on the globe.
+    if (isFlatWorldShown()) {
+      this.visible = true;
+      return;
+    }
     const now = performance.now();
     if (now < this._nextDrawAt) return;
     this._nextDrawAt = now + 1000 / CELESTIAL_MAX_FRAME_RATE;

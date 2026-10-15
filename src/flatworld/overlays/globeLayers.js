@@ -25,6 +25,8 @@ const SKIP_SOURCES = new Set([
   'TeleGeography Cable References',
 ]);
 const SKIP_PREFIXES = ['gev-'];
+/** Sources whose shapes change through callbacks (no change events): re-read every rebuild. */
+const LIVE_SOURCES = new Set(['gev-draw-preview']);
 const MAX_POINTS = 60000;
 const MAX_LINE_VERTS = 600000;
 const MAX_TILES = 220;
@@ -61,7 +63,11 @@ const POINT_FRAG = /* glsl */ `
   }
 `;
 
+/** Map annotations drawn as globe entities (areas, lines, pins from DRAW and the assistant). */
+const ANNOTATION_SOURCES = new Set(['gev-annotations']);
+
 function skipSource(name) {
+  if (LIVE_SOURCES.has(name) || ANNOTATION_SOURCES.has(name)) return false;
   return (
     SKIP_SOURCES.has(name) || SKIP_PREFIXES.some((p) => name?.startsWith(p))
   );
@@ -542,6 +548,10 @@ export class GlobeLayerMirror {
         if (!entity.isShowing) continue;
         let rec;
         try {
+          if (LIVE_SOURCES.has(d.name)) {
+            const old = this.cache.get(entity);
+            if (old) old.dirty = true;
+          }
           rec = this._entityShape(entity, time, fallback);
         } catch {
           continue;

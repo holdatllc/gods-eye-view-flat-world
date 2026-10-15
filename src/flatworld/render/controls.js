@@ -146,6 +146,8 @@ export class FlatWorldControls {
     );
     this._on(el, 'dblclick', (e) => {
       if (!this.enabled || this.mode !== 'orbit') return;
+      // Drawing on the map: a double-click finishes the shape, it does not dive.
+      if (this.drawing?.()) return;
       const p = this.groundUnderCursor(e.clientX, e.clientY);
       if (p) this.flyTo({ x: p.x, y: p.y, distance: this.distance / 3 });
     });
@@ -185,6 +187,8 @@ export class FlatWorldControls {
     const owns = (e) =>
       this.enabled &&
       !appKey(e) &&
+      // While drawing, Enter finishes and Backspace removes the last point (the draw tool's keys).
+      !(this.drawing?.() && (e.key === 'Enter' || e.key === 'Backspace')) &&
       !typing() &&
       !e.ctrlKey &&
       !e.metaKey &&

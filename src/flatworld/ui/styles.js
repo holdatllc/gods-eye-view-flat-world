@@ -114,6 +114,7 @@ body.flatworld-active .fw-panel { display: block; }
 /* The intel HUD's left corners (summary, MGRS) sit beside the flat panel, not under it. */
 body.flatworld-active:not(.ui-clean-view) #intel-hud .hud-top-left,
 body.flatworld-active:not(.ui-clean-view) #intel-hud .hud-bottom-left { transform: translateX(300px); }
+body:not(.flatworld-active) .fw-celestial-ring { display: none; }
 /* The detection surface lives in the hidden globe container; show it over the flat map. */
 body.flatworld-active.fw-detection #world-overlay-detection-surface { visibility: visible; }
 /* DATA LAYERS / SCENES stay usable in flat (GLOBE LAYERS); the flat panel sits beside them. */
