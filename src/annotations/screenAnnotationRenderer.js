@@ -4,6 +4,7 @@ import {
   getActiveTrackedReadoutId,
   TRACKED_OVERLAY_SOURCE_ID,
 } from '../data/trackedReadout.js';
+import { getFlatProjector, onFlatFrame } from '../overlays/flatProjection.js';
 
 /**
  * Screen-space annotation renderer (Direction B — the "whiteboard" aesthetic).
@@ -99,6 +100,8 @@ export function createScreenAnnotationRenderer(
   // world. postRender runs after the camera/tiles update, so positions are exact.
   const onPostRender = () => projectAll();
   scene.postRender.addEventListener(onPostRender);
+  // Flat world: the globe is paused; re-project on every flat frame instead.
+  const offFlatFrame = onFlatFrame(() => projectAll());
 
   function color(anno) {
     return PALETTE[anno.color] || PALETTE.primary;
@@ -353,6 +356,9 @@ export function createScreenAnnotationRenderer(
   }
 
   function project(lon, lat) {
+    const flat = getFlatProjector();
+    // Flat world: on the flat terrain, through the flat camera.
+    if (flat) return flat.projectGeodetic(lon, lat);
     // Anchor at the real surface height (cached + validated), so marks sit on
     // the ground/building instead of at sea level. The settle-once cache keeps
     // it stable (no per-frame jitter that earlier broke nearby projections).
@@ -402,6 +408,7 @@ export function createScreenAnnotationRenderer(
   // Tracked-subject screen footprint, or null when neither host card nor native
   // tracked graphic painted. The host rectangle is authoritative for the card.
   function trackedEntityRect() {
+    if (getFlatProjector()) return null;
     const trackedId = activeTrackedReadoutId();
     const painted = trackedId
       ? overlayPaintRect(TRACKED_OVERLAY_SOURCE_ID, trackedId)
@@ -698,6 +705,7 @@ export function createScreenAnnotationRenderer(
   function destroy() {
     try {
       scene.postRender.removeEventListener(onPostRender);
+      offFlatFrame();
     } catch {
       /* torn down */
     }

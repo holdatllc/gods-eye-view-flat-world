@@ -27,7 +27,7 @@ const SKIP_SOURCES = new Set([
 const SKIP_PREFIXES = ['gev-'];
 const MAX_POINTS = 60000;
 const MAX_LINE_VERTS = 600000;
-const MAX_TILES = 160;
+const MAX_TILES = 220;
 const scratchCarto = new Cesium.Cartographic();
 const scratchColor = new Cesium.Color();
 
@@ -131,6 +131,7 @@ export class GlobeLayerMirror {
     this.dataManager = dataManager;
     this.enabled = true;
     this.imagery = true;
+    this.mapSource = true;
     this.timer = 1;
     this.cache = new WeakMap();
     this.textures = new Map();
@@ -182,9 +183,13 @@ export class GlobeLayerMirror {
     this.timer = 1;
   }
 
+  setMapSource(on) {
+    this.mapSource = Boolean(on);
+    this.timer = 1;
+  }
+
   setImagery(on) {
     this.imagery = Boolean(on);
-    this.drape.visible = this.imagery;
     this.timer = 1;
   }
 
@@ -624,16 +629,25 @@ export class GlobeLayerMirror {
     const latestWeather = new Map();
     for (let i = 0; i < layers.length; i += 1) {
       const l = layers.get(i);
-      if (i === 0 || l.isBaseLayer?.() || !l.show) continue;
+      if (!l.show) continue;
       const provider = l.imageryProvider;
       if (!provider?.tilingScheme) continue;
       const url = String(provider.url || provider._resource?.url || '');
+      // The Esri photo is the flat terrain's own imagery, wherever it sits in the stack.
+      if (/World_Imagery/i.test(url)) continue;
+      if (i === 0 || l.isBaseLayer?.()) {
+        // MAP SOURCE: a base map other than the Esri photo the flat terrain already wears
+        // (OpenStreetMap, ...) is draped over the terrain, opaque, under everything else.
+        if (this.mapSource && i === 0)
+          out.push({ layer: l, provider, alpha: 1, order: -1, base: true });
+        continue;
+      }
       const weather = /\/api\/weather\//.test(url);
       // A weather frame that is still loading on the paused globe sits at alpha 0; show it at the
       // layer's opacity, and only the newest frame of each product.
       const alpha = l.alpha > 0.01 ? l.alpha : weather ? 0.7 : 0;
       if (alpha <= 0) continue;
-      const entry = { layer: l, provider, alpha, order: i };
+      const entry = { layer: l, provider, alpha, order: i, base: false };
       if (weather) {
         const product = /product=([a-z-]+)/.exec(url)?.[1] || url;
         latestWeather.set(product, entry);
@@ -672,6 +686,9 @@ export class GlobeLayerMirror {
     const xy = new Float64Array((N + 1) * (N + 1) * 2);
     const mercY = (lat) => Math.log(Math.tan(Math.PI / 4 + lat / 2));
     const invMerc = (m) => 2 * Math.atan(Math.exp(m)) - Math.PI / 2;
+    // Cesium decodes imagery to ImageBitmaps already flipped for WebGL; canvases and images are not.
+    const flipped =
+      typeof ImageBitmap !== 'undefined' && image instanceof ImageBitmap;
     const yN = mercator ? mercY(r.north) : r.north;
     const yS = mercator ? mercY(r.south) : r.south;
     for (let j = 0; j <= N; j += 1) {
@@ -689,7 +706,7 @@ export class GlobeLayerMirror {
         xy[k * 2] = w ? w.x : NaN;
         xy[k * 2 + 1] = w ? w.y : NaN;
         uv[k * 2] = u;
-        uv[k * 2 + 1] = v;
+        uv[k * 2 + 1] = flipped ? 1 - v : v;
       }
     }
     const index = [];
@@ -714,10 +731,14 @@ export class GlobeLayerMirror {
     texture.needsUpdate = true;
     const material = new THREE.MeshBasicMaterial({
       map: texture,
-      transparent: true,
+      transparent: alpha < 1,
       opacity: alpha,
-      depthTest: false,
+      // Depth-tested a little above the terrain: buildings and mountains still cover it.
+      depthTest: true,
       depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+      polygonOffsetUnits: -4,
       side: THREE.DoubleSide,
       fog: false,
     });
@@ -733,11 +754,12 @@ export class GlobeLayerMirror {
     const xy = mesh.userData.xy;
     const pos = mesh.geometry.attributes.position;
     const e = this.view.chunks.exaggeration;
+    const lift = Math.max(15, (this.view.getFocus().altitude || 0) * 0.002) * e;
     for (let k = 0; k < pos.count; k += 1) {
       const x = xy[k * 2];
       const y = xy[k * 2 + 1];
       if (!Number.isFinite(x)) continue;
-      const h = (this.view.chunks.heightAt(x, y) ?? 0) + 15 * e;
+      const h = (this.view.chunks.heightAt(x, y) ?? 0) + lift;
       pos.setXYZ(k, x - ox, h, -(y - oy));
     }
     pos.needsUpdate = true;
@@ -751,13 +773,15 @@ export class GlobeLayerMirror {
     const oy = focus.y;
     this.drape.position.set(ox, 0, -oy);
     const wanted = new Set();
-    const layers = this.imagery ? this._imageryLayers() : [];
+    const layers = this._imageryLayers().filter((l) =>
+      l.base ? this.mapSource : this.imagery,
+    );
     const geo = focus.domain?.domain === 'gps' ? focus.domain : null;
     // What the camera can see from straight above (wider when tilted), and about six tiles
     // across it.
     const tilt = Math.max(0.35, Math.sin((-focus.pitchDeg * Math.PI) / 180));
     const viewW = (focus.altitude * 1.25) / tilt;
-    const reach = Math.max(viewW * 1.2, 30000);
+    const reach = Math.max(viewW * 0.8, 20000);
     let bbox;
     if (!geo || reach > 5e6) {
       bbox = {
@@ -791,7 +815,7 @@ export class GlobeLayerMirror {
       while (
         range &&
         level > (provider.minimumLevel || 0) &&
-        (range.x1 - range.x0 + 1) * (range.y1 - range.y0 + 1) > 64
+        (range.x1 - range.x0 + 1) * (range.y1 - range.y0 + 1) > 100
       ) {
         level -= 1;
         range = this._tileRange(provider, level, bbox);
@@ -877,7 +901,7 @@ export class GlobeLayerMirror {
 
   update(dt, view) {
     const now = performance.now();
-    if (this.enabled || this.imagery) this._pulse(now);
+    this._pulse(now);
     this.timer += dt;
     const focus = view.getFocus();
     const last = this.lastFocus;
@@ -993,15 +1017,19 @@ function writePrefs(prefs) {
  * GLOBE LAYERS section of the flat panel: the switches for the mirror, the imagery drape and the
  * globe's DATA LAYERS / SCENES panels, and what is being drawn.
  */
-export function installGlobeLayerControls({ panel, mirror, wind }) {
+export function installGlobeLayerControls({ panel, mirror, wind, overlay }) {
   const prefs = {
     markers: true,
     imagery: true,
     panels: true,
     wind: true,
+    detection: true,
+    mapSource: true,
     ...readPrefs(),
   };
+  mirror.setMapSource(prefs.mapSource);
   wind?.setEnabled(prefs.wind);
+  overlay?.setEnabled(prefs.detection);
   mirror.setEnabled(prefs.markers);
   mirror.setImagery(prefs.imagery);
   document.body.classList.toggle('fw-globe-panels', prefs.panels);
@@ -1041,12 +1069,25 @@ export function installGlobeLayerControls({ panel, mirror, wind }) {
     'Drape the globe’s weather radar, satellite, lightning and scene imagery over the flat terrain',
     (on) => mirror.setImagery(on),
   );
+  mk(
+    'MAP SOURCE',
+    'mapSource',
+    'Drape the globe’s chosen base map (OpenStreetMap and the other MAP SOURCE choices) over the flat terrain; the default Esri photo is the flat terrain’s own',
+    (on) => mirror.setMapSource(on),
+  );
   if (wind)
     mk(
       'WIND FLOW',
       'wind',
       'Animate the globe’s WIND forecast as streaks moving through the flat projection (needs WIND on in DATA LAYERS)',
       (on) => wind.setEnabled(on),
+    );
+  if (overlay)
+    mk(
+      'DETECTION OVERLAY',
+      'detection',
+      'The globe’s detection brackets, callouts and cards (and its density, fade and opacity sliders) and map annotations, following the flat camera',
+      (on) => overlay.setEnabled(on),
     );
   const note = document.createElement('div');
   note.className = 'fw-note';

@@ -175,8 +175,16 @@ export class FlatWorldControls {
     ];
     // Capture phase on window: while the flat world is shown, the globe's own keyboard shortcuts
     // (voice push-to-talk on Space, detection-mode cycling on D, …) must not fire.
+    // The globe's own shortcuts that mean the same in the flat world pass through: visual styles
+    // 1-7, HUD h, clean view v, CCTV c, layers f, and detection d (d is a move key in fly/walk).
+    const APP_KEYS = new Set(['1', '2', '3', '4', '5', '6', '7', 'h', 'v', 'c', 'f']);
+    const appKey = (e) => {
+      const k = e.key.toLowerCase();
+      return APP_KEYS.has(k) || (k === 'd' && this.mode === 'orbit');
+    };
     const owns = (e) =>
       this.enabled &&
+      !appKey(e) &&
       !typing() &&
       !e.ctrlKey &&
       !e.metaKey &&
@@ -190,6 +198,11 @@ export class FlatWorldControls {
         if (!owns(e)) return;
         e.stopImmediatePropagation();
         const k = e.key.toLowerCase();
+        // o: the globe's orbit toggle; here, back to the orbit camera.
+        if (k === 'o' && !e.repeat) {
+          this.setMode?.('orbit');
+          return;
+        }
         if (MOVE_KEYS.includes(k)) {
           this.keys.add(k);
           if (this.mode !== 'orbit' || k.startsWith('arrow') || k === ' ')

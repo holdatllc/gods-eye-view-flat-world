@@ -22,6 +22,8 @@ import {
   keyholeLabelAlphaFromGeometry,
 } from '../celestialRing.js';
 import { registerWorldOverlayPaintLane } from '../overlays/worldOverlay.js';
+
+const _flatScreen = { x: 0, y: 0 };
 import {
   DETECTION_STYLE,
   DETECTION_THEME_MAP,
@@ -1315,6 +1317,7 @@ function _drawOverlay(frame) {
   // disagree about the operator's setting within a frame.
   const keyholeOutsideOpacity = getKeyholeFadeTuning().outsideOpacity;
   const viewProjection = frame.viewProjectionMatrix;
+  const flatProject = frame.project || null;
   const vp0 = viewProjection[0];
   const vp1 = viewProjection[1];
   const vp3 = viewProjection[3];
@@ -1368,20 +1371,28 @@ function _drawOverlay(frame) {
     // Skip objects occluded by the ellipsoid (behind the horizon)
     if (!occluder.isPointVisible(obj.position)) continue;
 
-    // This product renders in Cesium's 3D scene mode. Multiplying by the
-    // once-per-frame view-projection matrix is equivalent to the general
-    // SceneTransforms helper here, without repeating its mode/viewport setup
-    // for every observation.
-    const px = obj.position.x;
-    const py = obj.position.y;
-    const pz = obj.position.z;
-    const clipW = vp3 * px + vp7 * py + vp11 * pz + vp15;
-    if (clipW <= 0) continue;
-    const invW = 1 / clipW;
-    const sx =
-      ((vp0 * px + vp4 * py + vp8 * pz + vp12) * invW * 0.5 + 0.5) * width;
-    const sy =
-      (0.5 - (vp1 * px + vp5 * py + vp9 * pz + vp13) * invW * 0.5) * height;
+    let sx;
+    let sy;
+    if (flatProject) {
+      // Flat world: the host projects through the flat map's own camera.
+      if (!flatProject(obj.position, _flatScreen, obj)) continue;
+      sx = _flatScreen.x;
+      sy = _flatScreen.y;
+    } else {
+      // This product renders in Cesium's 3D scene mode. Multiplying by the
+      // once-per-frame view-projection matrix is equivalent to the general
+      // SceneTransforms helper here, without repeating its mode/viewport setup
+      // for every observation.
+      const px = obj.position.x;
+      const py = obj.position.y;
+      const pz = obj.position.z;
+      const clipW = vp3 * px + vp7 * py + vp11 * pz + vp15;
+      if (clipW <= 0) continue;
+      const invW = 1 / clipW;
+      sx = ((vp0 * px + vp4 * py + vp8 * pz + vp12) * invW * 0.5 + 0.5) * width;
+      sy =
+        (0.5 - (vp1 * px + vp5 * py + vp9 * pz + vp13) * invW * 0.5) * height;
+    }
 
     // Tracked objects (skipLabel) get larger boxes. AIR reticles scale with the
     // plane's on-screen size (same scaleByDistance curve as the billboards) so

@@ -5,8 +5,8 @@ const CSS = `
 #flatworld-root canvas.flatworld-canvas { pointer-events: auto; }
 #flatworld-root canvas.fw-live-labels { pointer-events: none; }
 body.flatworld-active #flatworld-root { pointer-events: auto; }
-body.flatworld-active #world-overlay-root,
-body.flatworld-active #world-overlay-actions,
+body.flatworld-active:not(.fw-detection) #world-overlay-root,
+body.flatworld-active:not(.fw-detection) #world-overlay-actions,
 body.flatworld-active #orbit-indicator,
 body.flatworld-active #cesium-credits,
 body.flatworld-active #safe-frame-overlay,
@@ -84,6 +84,14 @@ body:not(.flatworld-active) .fw-live-labels, body:not(.flatworld-active) .fw-car
 .fw-toggle:hover { border-color: #39e1ff; color: #fff; }
 /* Upstream chrome-free modes (clean view, recordings, cockpit) hide the flat-world button too. */
 body.ui-clean-view .fw-toggle, body.recording-mode .fw-toggle, body.cockpit-mode .fw-toggle { display: none; }
+/* CLEAN UI (v) in the flat world: the flat panel, sky panel and cards, credits and the globe's
+   side panels go too, as on the globe. */
+body.flatworld-active.ui-clean-view .fw-panel,
+body.flatworld-active.ui-clean-view .fw-sky-panel,
+body.flatworld-active.ui-clean-view .fw-sky-corner,
+body.flatworld-active.ui-clean-view .fw-sky-cards,
+body.flatworld-active.ui-clean-view .fw-credits,
+body.flatworld-active.ui-clean-view #left-panel-stack { display: none !important; }
 @media (max-width: 720px) {
   .fw-toggle { top: auto; bottom: 132px; left: 12px; transform: none; z-index: 70; }
   .fw-panel { width: calc(100vw - 28px); max-height: 45vh; top: auto; bottom: 180px; }
@@ -103,6 +111,11 @@ body:not(.flatworld-active) .fw-credits { display: none; }
   font: 11px/1.45 ui-monospace, 'SF Mono', Menlo, monospace; color: #cfeef7; background: rgba(4, 14, 20, 0.86);
   border: 1px solid rgba(57, 225, 255, 0.35); border-radius: 10px; padding: 10px 12px; display: none; backdrop-filter: blur(8px); }
 body.flatworld-active .fw-panel { display: block; }
+/* The intel HUD's left corners (summary, MGRS) sit beside the flat panel, not under it. */
+body.flatworld-active:not(.ui-clean-view) #intel-hud .hud-top-left,
+body.flatworld-active:not(.ui-clean-view) #intel-hud .hud-bottom-left { transform: translateX(300px); }
+/* The detection surface lives in the hidden globe container; show it over the flat map. */
+body.flatworld-active.fw-detection #world-overlay-detection-surface { visibility: visible; }
 /* DATA LAYERS / SCENES stay usable in flat (GLOBE LAYERS); the flat panel sits beside them. */
 body.flatworld-active:not(.fw-globe-panels) #left-panel-stack { display: none !important; }
 body.flatworld-active.fw-globe-panels #left-panel-stack { left: 312px !important; right: auto !important; }

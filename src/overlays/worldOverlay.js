@@ -166,6 +166,10 @@ let _accessibilitySignature = '';
 const _accessibleActivatorByKey = new Map();
 /** @type {HTMLCanvasElement|null} Host-owned detection blend-isolation surface. */
 let _detectionSurface = null;
+// Flat world: projects ECEF positions through the flat map's camera instead of
+// the paused globe's ({ project(position, out) -> bool }), or null.
+let _flatProjector = null;
+const NEVER_OCCLUDED = Object.freeze({ isPointVisible: () => true });
 /** @type {CanvasRenderingContext2D|null} */
 let _detectionCtx = null;
 /** @type {Function|null} */
@@ -1736,7 +1740,8 @@ function prepareCustomPaintFrame(timestamp, keyhole) {
   _customPaintFrame.dpr = _canvasDpr;
   _customPaintFrame.timestamp = timestamp;
   _customPaintFrame.cameraPosition = camera;
-  _customPaintFrame.occluder = _occluder;
+  _customPaintFrame.occluder = _flatProjector ? NEVER_OCCLUDED : _occluder;
+  _customPaintFrame.project = _flatProjector ? _flatProjector.project : null;
   _customPaintFrame.keyhole = keyhole;
   _customPaintFrame.uiRectCount = _uiOcclusionRects.length;
   _customPaintFrame.layoutRevision = _layoutRevision;
@@ -1883,31 +1888,36 @@ function snapshotAndProject(entry, source, viewProjection, keyhole) {
   record.position.z = position.z;
 
   const { x: px, y: py, z: pz } = record.position;
-  const clipW =
-    viewProjection.m3 * px +
-    viewProjection.m7 * py +
-    viewProjection.m11 * pz +
-    viewProjection.m15;
-  if (!(clipW > 0)) return null;
-  const invW = 1 / clipW;
-  record.screen.x =
-    ((viewProjection.m0 * px +
-      viewProjection.m4 * py +
-      viewProjection.m8 * pz +
-      viewProjection.m12) *
-      invW *
-      0.5 +
-      0.5) *
-    _canvasWidth;
-  record.screen.y =
-    (0.5 -
-      (viewProjection.m1 * px +
-        viewProjection.m5 * py +
-        viewProjection.m9 * pz +
-        viewProjection.m13) *
+  if (_flatProjector) {
+    // Flat world: through the flat map's camera (the globe is paused).
+    if (!_flatProjector.project(record.position, record.screen)) return null;
+  } else {
+    const clipW =
+      viewProjection.m3 * px +
+      viewProjection.m7 * py +
+      viewProjection.m11 * pz +
+      viewProjection.m15;
+    if (!(clipW > 0)) return null;
+    const invW = 1 / clipW;
+    record.screen.x =
+      ((viewProjection.m0 * px +
+        viewProjection.m4 * py +
+        viewProjection.m8 * pz +
+        viewProjection.m12) *
         invW *
+        0.5 +
         0.5) *
-    _canvasHeight;
+      _canvasWidth;
+    record.screen.y =
+      (0.5 -
+        (viewProjection.m1 * px +
+          viewProjection.m5 * py +
+          viewProjection.m9 * pz +
+          viewProjection.m13) *
+          invW *
+          0.5) *
+      _canvasHeight;
+  }
   if (
     entry.safeTopRatio > 0 &&
     !(entry.pinned && entry.pinnedBypassesSafeTop)
@@ -1924,7 +1934,7 @@ function snapshotAndProject(entry, source, viewProjection, keyhole) {
       record.position,
       record.screen,
       _viewport,
-      _occluder,
+      _flatProjector ? NEVER_OCCLUDED : _occluder,
     )
   )
     return null;
@@ -2710,6 +2720,24 @@ export function initWorldOverlay(viewer) {
   _detectionSurfaceNeedsClear = true;
   updateEntryDiagnostics();
   createDevFacade();
+}
+
+/**
+ * Flat world: project overlay anchors through the flat map's camera instead of
+ * the paused globe's, or pass null to go back to the globe. The projector is
+ * `{ project(cartesian, out) -> boolean }` writing CSS pixels into `out`.
+ */
+export function setWorldOverlayProjector(projector) {
+  _flatProjector = projector?.project ? projector : null;
+  if (_destroyed || !_viewer) return;
+  invalidateHost();
+  _canvasNeedsClear = true;
+  _detectionSurfaceNeedsClear = true;
+}
+
+/** Paint one overlay frame now (the flat world drives frames; the globe is paused). */
+export function renderWorldOverlayFrame() {
+  drawWorldOverlay();
 }
 
 /** Remove all listeners, observers, entries, diagnostics, and overlay DOM. */
