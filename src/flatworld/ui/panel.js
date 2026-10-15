@@ -64,7 +64,8 @@ export function createPanel({
   function applySmooth(on) {
     live.smooth = on;
     view.autoQuality = on;
-    view.pixelRatioCap = on ? 1.5 : 2;
+    // The governor may use the full Retina ratio when frames have room; it steps down if not.
+    view.pixelRatioCap = 2;
     view.renderer.setPixelRatio(
       Math.min(window.devicePixelRatio || 1, view.pixelRatioCap),
     );
@@ -206,7 +207,7 @@ export function createPanel({
   });
   function applySharp(on) {
     view.sharpPhotos = on;
-    view.lodPixelScale = on ? Math.min(window.devicePixelRatio || 1, 1.5) : 1;
+    view.lodPixelScale = on ? Math.min(window.devicePixelRatio || 1, 2) : 1;
     view.chunks.maxLevel = on ? 20 : 19;
     // Finer chunks (and so finer photo zooms) under the camera when on.
     view.basePixelTolerance = on ? 0.9 : 1.25;

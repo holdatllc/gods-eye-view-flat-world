@@ -63,6 +63,22 @@ export class FlightPath {
       }),
     );
     this.trailLine.renderOrder = 22;
+    // Hidden by terrain the trail is dimmed, as on the globe: the main line is depth-tested and
+    // a faint copy is drawn through the ground.
+    this.trailLine.material.depthTest = true;
+    this.trailBehind = new Line2(
+      this.trailLine.geometry,
+      new LineMaterial({
+        color: new THREE.Color(TRAIL_COLOR),
+        linewidth: 2.5,
+        transparent: true,
+        opacity: 0.28,
+        depthTest: false,
+      }),
+    );
+    this.trailBehind.renderOrder = 21;
+    this.trailBehind.frustumCulled = false;
+    this.trailLine.add(this.trailBehind);
     this.trailLine.frustumCulled = false;
     this.trailLine.visible = false;
   }
@@ -290,9 +306,9 @@ export class FlightPath {
     const key = rec ? `${t.kind}:${t.id}` : null;
     if (key !== this.trail.id) {
       this.trail = { id: key, points: [], at: 0, history: [] };
-      this.trailLine.material.color.set(
-        t?.kind === 'military' ? MILITARY_TRAIL : TRAIL_COLOR,
-      );
+      const trailColor = t?.kind === 'military' ? MILITARY_TRAIL : TRAIL_COLOR;
+      this.trailLine.material.color.set(trailColor);
+      this.trailBehind.material.color.set(trailColor);
       if (rec) this._fetchHistory(t.kind, t.id, key);
     }
     if (!rec?.drawn) {
@@ -339,7 +355,11 @@ export class FlightPath {
       this.trailLine.userData.n = all.length + 1;
     }
     this.trailLine.geometry.setPositions(arr);
+    this.trailBehind.geometry = this.trailLine.geometry;
     view.renderer.getSize(this.trailLine.material.resolution);
+    this.trailBehind.material.resolution.copy(
+      this.trailLine.material.resolution,
+    );
     this.trailLine.position.copy(o);
     this.trailLine.visible = true;
   }
