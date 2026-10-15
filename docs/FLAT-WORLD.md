@@ -19,6 +19,15 @@ true geodesic, and everything beyond the South-Pole circle is labelled as hypoth
 - **Relief** exaggerates terrain; **DRAIN OCEANS** shows ETOPO bathymetry; **DISTORTION** colours the
   east–west stretch; **SHOW DOMAINS** tints the hypothetical ice; **COASTLINES**; **GLEASON GRID**
   (24 meridians every 15°, tropics, polar circles).
+- **Buildings and scenery** (camera section, each a switch): **3D BUILDINGS** (OpenStreetMap
+  footprints and real `render_height`, every building and road within ~9 km below 25 km altitude);
+  **FAR BUILDINGS** (only tall or very large buildings, ≥ 40 m or ≥ 3,000 m², out to ~32 km and
+  from up to 80 km altitude, so whole skylines show); **BRIDGES** (decks lifted 6 m per OSM bridge
+  layer above ground or water, ramping at the abutments; OpenMapTiles has no deck height, so this
+  is an estimate); **TREES** (generated trees inside OSM woods and parks within ~3.5 km: the areas
+  are real, each tree's position and size is generated); **WINDOWS** (generated window pattern on
+  walls, a share lit at night). Close up at night the city-light layer is shaped by the daytime
+  imagery and kept off open water.
 - **SUN & TIME**: real sun for now ± 12 h (day/night terminator, city lights at night). Ice sky: the
   South Pole's real sky (default, continuous across the circle) or a fixed low sun.
 - **ICE WORLD**: seed, mountains, range coverage, glaciers, ice cliffs, crevasses, snow fill, polar
@@ -82,7 +91,8 @@ src/flatworld/
   nav/routeLayer.js        route drawing, Tissot indicatrices
   ice/iceField.js          deterministic ice terrain and materials (seeded, float64)
   ice/iceEnvironment.js    polar weather, ice caves, dramatic-vista finder
-  buildings/*              OpenStreetMap buildings and roads (OpenFreeMap vector tiles)
+  buildings/*              OpenStreetMap buildings, roads, bridges and trees (OpenFreeMap tiles);
+                           near/far detail per z14 tile, generated window facades (treeMesh.js)
   ui/*                     mode switch, panel, styles
 server/providers/flatworldData.js    serves local tiles at /flatworld-data (read-only, no traversal)
 ```
