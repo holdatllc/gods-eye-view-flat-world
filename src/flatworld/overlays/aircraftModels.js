@@ -33,10 +33,10 @@ export class AircraftModels {
     // switch is used.
     this.enabled = false;
     this.userSet = false;
-    this.group.visible = false;
     this.parts = [];
     this.group = new THREE.Group();
     this.group.name = 'flatworld-aircraft-models';
+    this.group.visible = false;
     this.modeled = new Set();
     this.m = new THREE.Matrix4();
     this.q = new THREE.Quaternion();
