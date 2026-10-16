@@ -94,6 +94,18 @@ function rgba(value, time, fallback) {
   return fallback;
 }
 
+/**
+ * Globe (sRGB) colour channels → the linear values three.js expects for vertex colours on its
+ * built-in materials (it re-encodes to sRGB on output; without this cyan 64 shows as 141).
+ */
+function toLinear(c) {
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+
+function linearRgba(c) {
+  return [toLinear(c[0]), toLinear(c[1]), toLinear(c[2]), c[3]];
+}
+
 function val(p, time, fallback) {
   if (p == null) return fallback;
   try {
@@ -614,7 +626,8 @@ export class GlobeLayerMirror {
         const x = f.xy[i * 2];
         const y = f.xy[i * 2 + 1];
         fpos.push(x - ox, heightAt(x, y) + 18 * e, -(y - oy));
-        fcol.push(f.color[0], f.color[1], f.color[2], f.color[3]);
+        const c = f.linear || (f.linear = linearRgba(f.color));
+        fcol.push(c[0], c[1], c[2], c[3]);
       }
       for (let i = 0; i < f.index.length; i += 1) findex.push(base + f.index[i]);
     };
@@ -673,7 +686,7 @@ export class GlobeLayerMirror {
         if (prev >= 0 && (inside || prevInside)) {
           if (lpos.length / 3 >= MAX_LINE_VERTS) return;
           lpos.push(px - ox, ph, -(py - oy), dx, h, -dy);
-          const c = line.color;
+          const c = line.linear || (line.linear = linearRgba(line.color));
           lcol.push(c[0], c[1], c[2], c[3], c[0], c[1], c[2], c[3]);
         }
         prev = i;

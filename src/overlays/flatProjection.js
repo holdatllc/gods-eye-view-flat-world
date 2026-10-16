@@ -69,8 +69,21 @@ let flatShown = false;
 
 export function setFlatWorldShown(shown) {
   flatShown = Boolean(shown);
+  if (flatShown) reopenPending = false;
 }
 
 export function isFlatWorldShown() {
   return flatShown;
+}
+
+// A share link opened with fw=1 is waiting for the flat world to mount: keep fw=1 in the
+// address until it does, so early hash rewrites cannot drop it.
+let reopenPending = false;
+
+export function setFlatReopenPending(pending) {
+  reopenPending = Boolean(pending);
+}
+
+export function isFlatReopenPending() {
+  return reopenPending;
 }

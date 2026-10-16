@@ -50,8 +50,9 @@ export function thermalFilter(u = {}) {
   const glow = num(u.bloom, 0.65);
   const parts = [
     'grayscale(1)',
-    `brightness(${(1.15 + sens * 0.6 + glow * 0.15).toFixed(2)})`,
-    `contrast(${(1.2 + sens * 0.6).toFixed(2)})`,
+    // Gentle enough that the dark night-side photo is not stretched into bands.
+    `brightness(${(1.1 + sens * 0.45 + glow * 0.1).toFixed(2)})`,
+    `contrast(${(1.05 + sens * 0.35).toFixed(2)})`,
   ];
   if (num(u.mode, 0) >= 0.5) parts.push('invert(1)');
   if (num(u.palette, 0) >= 0.5)
@@ -71,33 +72,58 @@ function stageNamed(viewer, name) {
   return null;
 }
 
-/** SVG filters for the globe's BLOOM and SHARPEN on the flat canvas (built once). */
-function ensureSvgFilters() {
+/**
+ * SVG filters for the globe's SHARPEN, BLOOM and FLIR pixelation on the flat canvas: one filter
+ * per quantised setting, created on first use. A new id per setting (rather than editing one
+ * filter's attributes) is what makes WebKit re-render when a slider moves.
+ */
+function svgFilter(kind, level) {
+  const id = `fw-${kind}-${level}`;
+  if (document.getElementById(id)) return `url(#${id})`;
   let svg = document.getElementById('fw-post-filters');
-  if (svg) return svg;
-  svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.id = 'fw-post-filters';
-  svg.setAttribute('width', '0');
-  svg.setAttribute('height', '0');
-  svg.style.position = 'absolute';
-  svg.innerHTML = `
-    <filter id="fw-sharpen" color-interpolation-filters="sRGB">
-      <feConvolveMatrix id="fw-sharpen-kernel" order="3" preserveAlpha="true"
-        kernelMatrix="0 -0.5 0 -0.5 3 -0.5 0 -0.5 0"/>
-    </filter>
-    <filter id="fw-bloom" color-interpolation-filters="sRGB">
-      <feColorMatrix in="SourceGraphic" type="matrix" result="bright"
+  if (!svg) {
+    svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.id = 'fw-post-filters';
+    svg.setAttribute('width', '0');
+    svg.setAttribute('height', '0');
+    svg.style.position = 'absolute';
+    document.body.appendChild(svg);
+  }
+  let body = '';
+  if (kind === 'sharpen') {
+    const a = level / 20; // 0.05 … 1.05
+    body = `<feConvolveMatrix order="3" preserveAlpha="true"
+      kernelMatrix="0 ${-a} 0 ${-a} ${1 + 4 * a} ${-a} 0 ${-a} 0"/>`;
+  } else if (kind === 'bloom') {
+    const slope = (0.6 + (level / 20) * 2.4).toFixed(2);
+    body = `<feColorMatrix in="SourceGraphic" type="matrix" result="bright"
         values="1 0 0 0 -0.55  0 1 0 0 -0.55  0 0 1 0 -0.55  0 0 0 1 0"/>
       <feGaussianBlur in="bright" stdDeviation="7" result="glow"/>
       <feComponentTransfer in="glow" result="glowA">
-        <feFuncR id="fw-bloom-r" type="linear" slope="1.6"/>
-        <feFuncG id="fw-bloom-g" type="linear" slope="1.6"/>
-        <feFuncB id="fw-bloom-b" type="linear" slope="1.6"/>
+        <feFuncR type="linear" slope="${slope}"/>
+        <feFuncG type="linear" slope="${slope}"/>
+        <feFuncB type="linear" slope="${slope}"/>
       </feComponentTransfer>
-      <feBlend in="SourceGraphic" in2="glowA" mode="screen"/>
-    </filter>`;
-  document.body.appendChild(svg);
-  return svg;
+      <feBlend in="SourceGraphic" in2="glowA" mode="screen"/>`;
+  } else if (kind === 'pixelate') {
+    // Mosaic: sample one pixel per block, then grow it over the block.
+    const p = level;
+    body = `<feFlood x="${Math.floor(p / 2)}" y="${Math.floor(p / 2)}" width="1" height="1"/>
+      <feComposite width="${p}" height="${p}"/>
+      <feTile result="grid"/>
+      <feComposite in="SourceGraphic" in2="grid" operator="in"/>
+      <feMorphology operator="dilate" radius="${Math.floor(p / 2)}"/>`;
+  }
+  const f = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+  f.id = id;
+  f.setAttribute('color-interpolation-filters', 'sRGB');
+  f.setAttribute('x', '0');
+  f.setAttribute('y', '0');
+  f.setAttribute('width', '100%');
+  f.setAttribute('height', '100%');
+  f.innerHTML = body;
+  svg.appendChild(f);
+  return `url(#${id})`;
 }
 
 export function createFlatPresets({ view, viewer }) {
@@ -113,31 +139,23 @@ export function createFlatPresets({ view, viewer }) {
     if (state.enabled && state.style === 'thermal') {
       const st = stageNamed(viewer, 'godsEyeView_thermal');
       parts.push(thermalFilter(st?.uniforms));
+      // FLIR Pixelation (1 = none … 6): CSS-pixel blocks of that size.
+      const px = Math.round(Number(st?.uniforms?.pixelation) || 1);
+      if (px >= 2) parts.push(svgFilter('pixelate', Math.min(px, 12)));
     } else if (look.filter) parts.push(look.filter);
     // The globe's SHARPEN and BLOOM switches and intensities.
     const sharpen = stageNamed(viewer, 'godsEyeView_sharpen');
     if (state.enabled && sharpen?.enabled) {
-      ensureSvgFilters();
       const a = Math.min(Math.max(Number(sharpen.uniforms?.amount) || 1, 0.1), 2.1) * 0.5;
-      document
-        .getElementById('fw-sharpen-kernel')
-        ?.setAttribute(
-          'kernelMatrix',
-          `0 ${-a} 0 ${-a} ${1 + 4 * a} ${-a} 0 ${-a} 0`,
-        );
-      parts.push('url(#fw-sharpen)');
+      parts.push(svgFilter('sharpen', Math.max(1, Math.round(a * 20))));
     }
     const bloom = stageNamed(viewer, 'bloom');
     if (state.enabled && bloom?.enabled) {
-      ensureSvgFilters();
       const eased = Math.min(
         Math.max(((Number(bloom.uniforms?.brightness) || -0.5) + 0.5) / 0.36, 0),
         1,
       );
-      const slope = (0.6 + eased * 2.4).toFixed(2);
-      for (const c of ['r', 'g', 'b'])
-        document.getElementById(`fw-bloom-${c}`)?.setAttribute('slope', slope);
-      parts.push('url(#fw-bloom)');
+      parts.push(svgFilter('bloom', Math.round(eased * 20)));
     }
     const filter = parts.join(' ');
     if (view.canvas.style.filter !== filter) view.canvas.style.filter = filter;
@@ -152,7 +170,7 @@ export function createFlatPresets({ view, viewer }) {
     const bl = stageNamed(viewer, 'bloom');
     const key = JSON.stringify([
       state.style,
-      t && [t.sensitivity, t.bloom, t.mode, t.palette],
+      t && [t.sensitivity, t.bloom, t.mode, t.palette, t.pixelation],
       sh && [sh.enabled, sh.uniforms?.amount],
       bl && [bl.enabled, bl.uniforms?.brightness],
     ]);
