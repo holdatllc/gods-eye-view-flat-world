@@ -493,6 +493,9 @@ export class CelestialRing {
     // timer requests its own. (perf wave 2 fix — owner playtest finding)
     if (this.enabled !== wasEnabled) governorRequestRender('celestial-ring');
     this._root.classList.toggle('disabled', !this.enabled);
+    // In the flat world the flat ring is what shows; count it as visible at once, so the next
+    // CELESTIAL press turns it off as on the globe.
+    if (this.enabled && isFlatWorldShown()) this.visible = true;
     if (!this.enabled) {
       this.visible = false;
       this._root.classList.remove('visible');

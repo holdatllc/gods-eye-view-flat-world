@@ -40,6 +40,7 @@ import { OverlayBridge } from './overlays/overlayBridge.js';
 import {
   setFlatShareView,
   getFlatDrawSink,
+  isFlatReopenPending,
 } from '../overlays/flatProjection.js';
 import { installFlatToolbar } from './ui/flatToolbar.js';
 import { FlatCelestialRing } from './overlays/celestialRingFlat.js';
@@ -548,7 +549,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
   // A share link copied in the flat world carries fw=1 in its hash: reopen the flat world there.
   const hashFlat =
     new URLSearchParams(location.hash.slice(1)).get('fw') === '1';
-  if (hashFlat && params.get('fw') !== '1')
+  if ((hashFlat || isFlatReopenPending()) && params.get('fw') !== '1')
     whenCameraSettles(viewer).then(() => api.enter());
   if (params.get('fw') === '1') {
     params.delete('fw');

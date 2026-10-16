@@ -10,7 +10,11 @@ import {
   encodeLayerStateParams,
 } from './data/layerState.js';
 import { STYLE_URL_NAMES } from './view/index.js';
-import { getFlatShareView } from './overlays/flatProjection.js';
+import {
+  getFlatShareView,
+  isFlatReopenPending,
+  setFlatReopenPending,
+} from './overlays/flatProjection.js';
 
 /**
  * Share Links — URL Hash State Management
@@ -158,6 +162,7 @@ export class ShareLinkManager {
     if (!hash) return null;
 
     const params = new URLSearchParams(hash);
+    if (params.get('fw') === '1') setFlatReopenPending(true);
     const lat = parseFloat(params.get('lat'));
     const lon = parseFloat(params.get('lon'));
 
@@ -575,6 +580,7 @@ export class ShareLinkManager {
         'roll',
         Math.round(Cesium.Math.toDegrees(camera.roll)).toString(),
       );
+      if (isFlatReopenPending()) params.set('fw', '1');
     }
     params.set('style', STYLE_TO_URL[this._currentStyle] || 'normal');
     params.set('bloom', this._bloomEnabled ? '1' : '0');
