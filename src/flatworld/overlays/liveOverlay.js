@@ -353,6 +353,9 @@ export class LiveOverlay {
           ? a.verticalRateMps
           : null,
         aircraftClass: a.aircraftClass ?? null,
+        // The altitude the feed reported (null when none), for labels; altitudeM above may be
+        // a drawing fallback or the terrain height of a grounded plane.
+        reportedAltitudeM: Number.isFinite(a.altitudeM) ? a.altitudeM : null,
         // Military type label as the globe's layer gives it (TR-3B swap included).
         typeLabel:
           typeof a.type === 'string'
@@ -424,6 +427,7 @@ export class LiveOverlay {
           speedMps: row.speedMps,
           verticalRateMps: row.verticalRateMps,
           aircraftClass: row.aircraftClass,
+          reportedAltitudeM: row.reportedAltitudeM,
           typeLabel: row.typeLabel,
           source: row.source,
           onGround: row.onGround,
