@@ -10,6 +10,7 @@ import {
   encodeLayerStateParams,
 } from './data/layerState.js';
 import { STYLE_URL_NAMES } from './view/index.js';
+import { getFlatShareView } from './overlays/flatProjection.js';
 
 /**
  * Share Links — URL Hash State Management
@@ -548,21 +549,33 @@ export class ShareLinkManager {
 
     const params = new URLSearchParams();
     params.set('v', '2');
-    params.set('lat', Cesium.Math.toDegrees(carto.latitude).toFixed(4));
-    params.set('lon', Cesium.Math.toDegrees(carto.longitude).toFixed(4));
-    params.set('alt', Math.round(carto.height).toString());
-    params.set(
-      'heading',
-      Math.round(Cesium.Math.toDegrees(camera.heading)).toString(),
-    );
-    params.set(
-      'pitch',
-      Math.round(Cesium.Math.toDegrees(camera.pitch)).toString(),
-    );
-    params.set(
-      'roll',
-      Math.round(Cesium.Math.toDegrees(camera.roll)).toString(),
-    );
+    // Flat world shown: its own view (as the equivalent globe camera) and a flag to reopen it.
+    const flat = getFlatShareView();
+    if (flat) {
+      params.set('lat', flat.lat.toFixed(4));
+      params.set('lon', flat.lon.toFixed(4));
+      params.set('alt', Math.round(flat.alt).toString());
+      params.set('heading', Math.round(flat.heading).toString());
+      params.set('pitch', Math.round(flat.pitch).toString());
+      params.set('roll', '0');
+      params.set('fw', '1');
+    } else {
+      params.set('lat', Cesium.Math.toDegrees(carto.latitude).toFixed(4));
+      params.set('lon', Cesium.Math.toDegrees(carto.longitude).toFixed(4));
+      params.set('alt', Math.round(carto.height).toString());
+      params.set(
+        'heading',
+        Math.round(Cesium.Math.toDegrees(camera.heading)).toString(),
+      );
+      params.set(
+        'pitch',
+        Math.round(Cesium.Math.toDegrees(camera.pitch)).toString(),
+      );
+      params.set(
+        'roll',
+        Math.round(Cesium.Math.toDegrees(camera.roll)).toString(),
+      );
+    }
     params.set('style', STYLE_TO_URL[this._currentStyle] || 'normal');
     params.set('bloom', this._bloomEnabled ? '1' : '0');
     params.set('sharpen', this._sharpenEnabled ? '1' : '0');

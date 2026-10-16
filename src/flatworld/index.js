@@ -36,6 +36,15 @@ import {
   installGlobeLayerControls,
 } from './overlays/globeLayers.js';
 import { WindFlow } from './overlays/windFlow.js';
+import { OverlayBridge } from './overlays/overlayBridge.js';
+import {
+  setFlatShareView,
+  getFlatDrawSink,
+} from '../overlays/flatProjection.js';
+import { installFlatToolbar } from './ui/flatToolbar.js';
+import { FlatCelestialRing } from './overlays/celestialRingFlat.js';
+import { createGlobeClicks } from './ui/globeClicks.js';
+import { isPointerFree } from '../data/inputOwnership.js';
 import { AircraftSprites } from './overlays/aircraftSprites.js';
 import { AircraftModels } from './overlays/aircraftModels.js';
 import { createFlatPresets } from './ui/flatPresets.js';
@@ -71,6 +80,25 @@ function whenCameraSettles(viewer, { maxMs = 9000, quietMs = 600 } = {}) {
   });
 }
 
+/** Point `dist` metres from (lat, lon) along `bearingDeg`, on a sphere. */
+function destinationPoint(lat, lon, dist, bearingDeg) {
+  const R = 6371008.8;
+  const d = dist / R;
+  const b = (bearingDeg * Math.PI) / 180;
+  const p1 = (lat * Math.PI) / 180;
+  const l1 = (lon * Math.PI) / 180;
+  const p2 = Math.asin(
+    Math.sin(p1) * Math.cos(d) + Math.cos(p1) * Math.sin(d) * Math.cos(b),
+  );
+  const l2 =
+    l1 +
+    Math.atan2(
+      Math.sin(b) * Math.sin(d) * Math.cos(p1),
+      Math.cos(d) - Math.sin(p1) * Math.sin(p2),
+    );
+  return { lat: (p2 * 180) / Math.PI, lon: ((((l2 * 180) / Math.PI + 540) % 360) - 180) };
+}
+
 export function mountFlatWorld({ viewer, dataManager }) {
   installStyles();
   const toggle = createToggle();
@@ -100,7 +128,10 @@ export function mountFlatWorld({ viewer, dataManager }) {
     view.addLayer(routes);
     const buildings = new BuildingsLayer({ frame });
     view.addLayer(buildings);
-    view.addLayer(new SkyBodies({ frame }));
+    const sky = new SkyBodies({ frame });
+    view.addLayer(sky);
+    // CELESTIAL: the globe's sun/moon ring around the flat disc, from the sky lane's positions.
+    view.addLayer(new FlatCelestialRing({ frame, sky }));
     const wall = new WallLayer({ frame });
     view.addLayer(wall);
 
@@ -114,7 +145,10 @@ export function mountFlatWorld({ viewer, dataManager }) {
       viewer,
       view,
       live,
-      onChange: (active) => panel.setActive(active),
+      onChange: (active) => {
+        panel.setActive(active);
+        overlayBridge.setActive(active);
+      },
     });
     // Selection goes through the globe's own layers (shared Context, readout, voice).
     const selection = createLiveSelection({ viewer, live, mode });
@@ -154,8 +188,12 @@ export function mountFlatWorld({ viewer, dataManager }) {
     // WIND: the globe's forecast grid, flowing through the projection.
     const windFlow = new WindFlow({ frame, dataManager });
     view.addLayer(windFlow);
+    // Detection overlay and annotations, projected through the flat camera.
+    const overlayBridge = new OverlayBridge({ frame, live });
+    view.addLayer(overlayBridge);
     // VISUAL PRESETS and cockpit vision modes, as filters on the flat canvas.
     const presets = createFlatPresets({ view, viewer });
+    view.addLayer({ update: () => presets.update() });
     // The globe's round scope vignette, following its SCOPE switch and feather.
     const scope = createFlatScope({ view, mode });
     // Flat mode shows every tracked satellite (~11,500, Starlink included) at true height by
@@ -327,10 +365,31 @@ export function mountFlatWorld({ viewer, dataManager }) {
     view.canvas.addEventListener('pointerdown', (e) => {
       down = { x: e.clientX, y: e.clientY };
     });
+    // DISPLAY ▸ DRAW: map clicks become the draw tool's points (lat/lon from the flat terrain).
+    const drawSink = () => {
+      const sink = getFlatDrawSink();
+      return sink?.active() ? sink : null;
+    };
+    const geoAt = (e) => {
+      const p = view.pick(e.clientX, e.clientY);
+      const d = p?.domain;
+      return d?.domain === DOMAIN_GPS
+        ? { lat: d.lat, lon: d.lon, height: Number.isFinite(d.height) ? d.height : 0 }
+        : null;
+    };
+    view.controls.drawing = () => Boolean(drawSink());
+    const globeClicks = createGlobeClicks({ viewer });
+    view.canvas.addEventListener('dblclick', () => drawSink()?.finish());
     view.canvas.addEventListener('pointerup', (e) => {
       if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4)
         return;
       if (cockpit.active()) return;
+      const sink = drawSink();
+      if (sink) {
+        const p = geoAt(e);
+        if (p) sink.click(p);
+        return;
+      }
       if (routes.measuring) {
         const p = view.pick(e.clientX, e.clientY);
         if (p) routes.addPoint(p);
@@ -362,7 +421,11 @@ export function mountFlatWorld({ viewer, dataManager }) {
         globeMarkers.select(marker);
       } else if (layerMarker) {
         if (live.tracked) selection.deselect();
-        globeLayers.select(layerMarker);
+        // The globe layer's own click: its selection, card and camera move.
+        globeClicks.click(e.clientX, e.clientY, layerMarker.entity, geoAt(e));
+      } else if (!isPointerFree()) {
+        // A globe tool holds the pointer (DIRECTIONS "click map", ...): give it the map point.
+        globeClicks.click(e.clientX, e.clientY, null, geoAt(e));
       } else if (live.tracked) selection.deselect();
     });
     let hoverPending = false;
@@ -371,6 +434,11 @@ export function mountFlatWorld({ viewer, dataManager }) {
       hoverPending = true;
       requestAnimationFrame(() => {
         hoverPending = false;
+        const sink = e.buttons === 0 ? drawSink() : null;
+        if (sink) {
+          sink.move(geoAt(e));
+          globeLayers.timer = Math.max(globeLayers.timer, 0.9);
+        }
         const rec =
           e.buttons === 0 && !routes.measuring
             ? labels.nearest(e.clientX, e.clientY, hitRadius(e))
@@ -395,8 +463,40 @@ export function mountFlatWorld({ viewer, dataManager }) {
         selection.deselect();
     });
 
+    // Share links copied here keep the flat view (as the equivalent globe camera) and reopen flat.
+    setFlatShareView(() => {
+      if (!mode.active) return null;
+      const f = view.getFocus();
+      if (f.domain?.domain !== DOMAIN_GPS) return null;
+      const range =
+        view.controls.mode === 'orbit'
+          ? view.controls.distance
+          : Math.max(f.altitude, 50);
+      const pitch = Math.min(Math.max(f.pitchDeg, -90), -5);
+      const p = (-pitch * Math.PI) / 180;
+      const back = range * Math.cos(p);
+      const eye = destinationPoint(
+        f.domain.lat,
+        f.domain.lon,
+        back,
+        f.heading + 180,
+      );
+      return {
+        lat: eye.lat,
+        lon: eye.lon,
+        alt: f.ground / view.chunks.exaggeration + range * Math.sin(p),
+        heading: f.heading,
+        pitch,
+      };
+    });
+    installFlatToolbar({ view, mode });
     installLiveExtras({ live, panel, host });
-    installGlobeLayerControls({ panel, mirror: globeLayers, wind: windFlow });
+    installGlobeLayerControls({
+      panel,
+      mirror: globeLayers,
+      wind: windFlow,
+      overlay: overlayBridge,
+    });
     world = {
       view,
       mode,
@@ -415,6 +515,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
       globeMarkers,
       globeLayers,
       windFlow,
+      overlayBridge,
       presets,
       scope,
       planeIcons,
@@ -444,6 +545,11 @@ export function mountFlatWorld({ viewer, dataManager }) {
   // Deep link ?fw=1: consume the parameter (so later share links don't carry it) and open the
   // flat world once any shared-view camera restore has finished.
   const params = new URLSearchParams(location.search);
+  // A share link copied in the flat world carries fw=1 in its hash: reopen the flat world there.
+  const hashFlat =
+    new URLSearchParams(location.hash.slice(1)).get('fw') === '1';
+  if (hashFlat && params.get('fw') !== '1')
+    whenCameraSettles(viewer).then(() => api.enter());
   if (params.get('fw') === '1') {
     params.delete('fw');
     const search = params.toString();
