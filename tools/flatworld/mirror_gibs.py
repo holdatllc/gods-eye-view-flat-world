@@ -16,7 +16,7 @@ LAYERS = [
     ('MODIS_Terra_CorrectedReflectance_TrueColor', '2026-07-20', 'jpg', '250m', 'north'),
 ]
 MAX_Z = int(sys.argv[1]) if len(sys.argv) > 1 else 5
-UA = {'User-Agent': 'gods-eye-infinite-ice/0.1 (local mirror; contact holdatllc)'}
+UA = {'User-Agent': 'gods-eye-infinite-ice/0.1 (flat world local data mirror)'}
 
 def jobs():
     for layer, date, ext, tms, limit in LAYERS:

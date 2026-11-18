@@ -50,12 +50,14 @@ export function createGlobeClicks({ viewer }) {
   function click(clientX, clientY, target, geo) {
     const canvas = scene.canvas;
     let picked;
-    if (target instanceof Cesium.Entity) picked = { id: target, primitive: null };
+    if (target instanceof Cesium.Entity)
+      picked = { id: target, primitive: null };
     else if (target)
       picked = {
         primitive: target,
         id: target.id,
-        collection: target._billboardCollection || target._pointPrimitiveCollection,
+        collection:
+          target._billboardCollection || target._pointPrimitiveCollection,
       };
     const ground = geo
       ? Cesium.Cartesian3.fromDegrees(geo.lon, geo.lat, geo.height || 0)
@@ -71,8 +73,12 @@ export function createGlobeClicks({ viewer }) {
       isPrimary: true,
     };
     withPicks(picked, ground, () => {
-      canvas.dispatchEvent(new PointerEvent('pointerdown', { ...init, buttons: 1 }));
-      canvas.dispatchEvent(new PointerEvent('pointerup', { ...init, buttons: 0 }));
+      canvas.dispatchEvent(
+        new PointerEvent('pointerdown', { ...init, buttons: 1 }),
+      );
+      canvas.dispatchEvent(
+        new PointerEvent('pointerup', { ...init, buttons: 0 }),
+      );
     });
     return true;
   }

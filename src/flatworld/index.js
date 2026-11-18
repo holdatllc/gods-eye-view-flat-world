@@ -95,7 +95,10 @@ function destinationPoint(lat, lon, dist, bearingDeg) {
       Math.sin(b) * Math.sin(d) * Math.cos(p1),
       Math.cos(d) - Math.sin(p1) * Math.sin(p2),
     );
-  return { lat: (p2 * 180) / Math.PI, lon: ((((l2 * 180) / Math.PI + 540) % 360) - 180) };
+  return {
+    lat: (p2 * 180) / Math.PI,
+    lon: (((l2 * 180) / Math.PI + 540) % 360) - 180,
+  };
 }
 
 export function mountFlatWorld({ viewer, dataManager }) {
@@ -371,7 +374,11 @@ export function mountFlatWorld({ viewer, dataManager }) {
       const p = view.pick(e.clientX, e.clientY);
       const d = p?.domain;
       return d?.domain === DOMAIN_GPS
-        ? { lat: d.lat, lon: d.lon, height: Number.isFinite(d.height) ? d.height : 0 }
+        ? {
+            lat: d.lat,
+            lon: d.lon,
+            height: Number.isFinite(d.height) ? d.height : 0,
+          }
         : null;
     };
     view.controls.drawing = () => Boolean(drawSink());
@@ -442,7 +449,9 @@ export function mountFlatWorld({ viewer, dataManager }) {
             : null;
         labels.setHover(rec);
         const layerHit =
-          !rec && e.buttons === 0 ? globeLayers.hover(e.clientX, e.clientY) : null;
+          !rec && e.buttons === 0
+            ? globeLayers.hover(e.clientX, e.clientY)
+            : null;
         if (rec) globeLayers.hover(-1e6, -1e6);
         view.canvas.style.cursor = rec || layerHit ? 'pointer' : '';
         panel.showCursor(view.pick(e.clientX, e.clientY));

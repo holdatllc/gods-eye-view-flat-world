@@ -146,13 +146,18 @@ export function createFlatPresets({ view, viewer }) {
     // The globe's SHARPEN and BLOOM switches and intensities.
     const sharpen = stageNamed(viewer, 'godsEyeView_sharpen');
     if (state.enabled && sharpen?.enabled) {
-      const a = Math.min(Math.max(Number(sharpen.uniforms?.amount) || 1, 0.1), 2.1) * 0.5;
+      const a =
+        Math.min(Math.max(Number(sharpen.uniforms?.amount) || 1, 0.1), 2.1) *
+        0.5;
       parts.push(svgFilter('sharpen', Math.max(1, Math.round(a * 20))));
     }
     const bloom = stageNamed(viewer, 'bloom');
     if (state.enabled && bloom?.enabled) {
       const eased = Math.min(
-        Math.max(((Number(bloom.uniforms?.brightness) || -0.5) + 0.5) / 0.36, 0),
+        Math.max(
+          ((Number(bloom.uniforms?.brightness) || -0.5) + 0.5) / 0.36,
+          0,
+        ),
         1,
       );
       parts.push(svgFilter('bloom', Math.round(eased * 20)));

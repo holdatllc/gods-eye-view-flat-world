@@ -142,8 +142,14 @@ export class FlatCelestialRing {
     });
     const place = (m, a) => {
       const margin = 14;
-      const x = Math.min(Math.max(c.x + Math.cos(a) * radius, margin), w - margin);
-      const y = Math.min(Math.max(c.y + Math.sin(a) * radius, margin), h - margin);
+      const x = Math.min(
+        Math.max(c.x + Math.cos(a) * radius, margin),
+        w - margin,
+      );
+      const y = Math.min(
+        Math.max(c.y + Math.sin(a) * radius, margin),
+        h - margin,
+      );
       m.style.left = `${x}px`;
       m.style.top = `${y}px`;
     };

@@ -28,11 +28,15 @@ export class WindFlow {
     this.geometry = new THREE.BufferGeometry();
     this.geometry.setAttribute(
       'position',
-      new THREE.BufferAttribute(this.positions, 3).setUsage(THREE.DynamicDrawUsage),
+      new THREE.BufferAttribute(this.positions, 3).setUsage(
+        THREE.DynamicDrawUsage,
+      ),
     );
     this.geometry.setAttribute(
       'color',
-      new THREE.BufferAttribute(this.colors, 4).setUsage(THREE.DynamicDrawUsage),
+      new THREE.BufferAttribute(this.colors, 4).setUsage(
+        THREE.DynamicDrawUsage,
+      ),
     );
     this.lines = new THREE.LineSegments(
       this.geometry,
@@ -109,7 +113,8 @@ export class WindFlow {
     const reseedAll = boxKey !== this.boxKey && this._boxFar(box);
     this.boxKey = boxKey;
     this.box = box;
-    while (this.particles.length < COUNT) this.particles.push(this._seed({}, box));
+    while (this.particles.length < COUNT)
+      this.particles.push(this._seed({}, box));
     // Speed: a particle crosses about a fifth of the view per second at 20 m/s.
     const speedScale = (reach * 0.2) / 20;
     const e = view.chunks.exaggeration;
@@ -147,7 +152,8 @@ export class WindFlow {
         const a = (i - 1) * 3;
         const b = i * 3;
         // A jump (re-seed or wrap) is not a streak.
-        if (Math.abs(t[a] - t[b]) + Math.abs(t[a + 2] - t[b + 2]) > jump) continue;
+        if (Math.abs(t[a] - t[b]) + Math.abs(t[a + 2] - t[b + 2]) > jump)
+          continue;
         const o = k * 6;
         pos[o] = t[a] - ox;
         pos[o + 1] = t[a + 1];

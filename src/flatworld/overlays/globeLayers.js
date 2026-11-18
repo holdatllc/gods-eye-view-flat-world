@@ -404,9 +404,10 @@ export class GlobeLayerMirror {
       const outline = val(polygon.outline, time, false)
         ? rgba(polygon.outlineColor, time, null)
         : null;
-      const fill = val(polygon.fill, time, true) !== false
-        ? rgba(polygon.material, time, fallback)
-        : null;
+      const fill =
+        val(polygon.fill, time, true) !== false
+          ? rgba(polygon.material, time, fallback)
+          : null;
       const c = outline || fill || fallback;
       addLine(positions, [c[0], c[1], c[2], Math.max(c[3], 0.75)], true, true);
       if (fill && fill[3] > 0.02) addFill(positions, fill);
@@ -503,11 +504,13 @@ export class GlobeLayerMirror {
     // Map layers that put their entities straight in viewer.entities (DIRECTIONS A/B pins and
     // route, ...). Aircraft, satellites, trails and the CCTV gizmos there are the flat world's
     // own or not map markers, so only these id families are mirrored.
-    const own = this._viewerEntities || (this._viewerEntities = {
-      name: 'viewer-entities',
-      show: true,
-      entities: { values: [] },
-    });
+    const own =
+      this._viewerEntities ||
+      (this._viewerEntities = {
+        name: 'viewer-entities',
+        show: true,
+        entities: { values: [] },
+      });
     own.entities.values = v.entities.values.filter((e) =>
       VIEWER_ENTITY_PREFIXES.some((p) => String(e.id).startsWith(p)),
     );
@@ -608,7 +611,12 @@ export class GlobeLayerMirror {
             x: f.cx,
             y: f.cy,
             h: 0,
-            color: [f.color[0], f.color[1], f.color[2], Math.max(f.color[3], 0.85)],
+            color: [
+              f.color[0],
+              f.color[1],
+              f.color[2],
+              Math.max(f.color[3], 0.85),
+            ],
             size: 7,
             image: null,
             clamp: true,
@@ -629,7 +637,8 @@ export class GlobeLayerMirror {
         const c = f.linear || (f.linear = linearRgba(f.color));
         fcol.push(c[0], c[1], c[2], c[3]);
       }
-      for (let i = 0; i < f.index.length; i += 1) findex.push(base + f.index[i]);
+      for (let i = 0; i < f.index.length; i += 1)
+        findex.push(base + f.index[i]);
     };
     const items = [];
     const counts = {};
@@ -675,8 +684,7 @@ export class GlobeLayerMirror {
         const dy = y - oy;
         const inside = dx * dx + dy * dy <= reach2;
         const prevInside =
-          prev >= 0 &&
-          (px - ox) * (px - ox) + (py - oy) * (py - oy) <= reach2;
+          prev >= 0 && (px - ox) * (px - ox) + (py - oy) * (py - oy) <= reach2;
         const h = line.clamp
           ? (inside ? heightAt(x, y) : 0) + 20 * e
           : Math.max(
@@ -1015,7 +1023,10 @@ export class GlobeLayerMirror {
             this.tiles.set(key, tile);
           }
           tile.used = performance.now();
-          if (tile.state === 'new' || (tile.state === 'retry' && tile.retryAt < tile.used)) {
+          if (
+            tile.state === 'new' ||
+            (tile.state === 'retry' && tile.retryAt < tile.used)
+          ) {
             tile.state = 'loading';
             let req;
             try {

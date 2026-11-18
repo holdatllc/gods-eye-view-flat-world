@@ -84,6 +84,16 @@ export function createBrowserViteConfig({
         'egm96-universal',
         // Loaded on demand when the first street-level image opens.
         'mapillary-js',
+        // Flat world: dynamically imported after the globe starts.
+        'three',
+        'three/addons/lines/Line2.js',
+        'three/addons/lines/LineGeometry.js',
+        'three/addons/lines/LineMaterial.js',
+        'three/addons/lines/LineSegments2.js',
+        'three/addons/lines/LineSegmentsGeometry.js',
+        'three/addons/loaders/GLTFLoader.js',
+        'three/addons/objects/Sky.js',
+        'geographiclib-geodesic',
       ],
     },
     server: {

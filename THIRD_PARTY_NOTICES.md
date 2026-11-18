@@ -55,6 +55,15 @@ Street Level viewer; the complete resolved dependency inventory remains in
 - License: MIT
 - License text: <https://github.com/mrdoob/three.js/blob/dev/LICENSE>
 
+## Astronomy Engine (flat world sun and moon positions)
+
+- Source file: `src/flatworld/vendor/astronomy-engine/astronomy.js` (vendored copy;
+  the MIT licence text is kept at the top of the file)
+- Author: Copyright (c) 2019-2023 Don Cross
+- Source: <https://github.com/cosinekitty/astronomy>
+- License: MIT
+- License text: <https://github.com/cosinekitty/astronomy/blob/master/LICENSE>
+
 ## GeographicLib geodesic routines (flat world route comparison)
 
 - Package: `geographiclib-geodesic` 2.2.0

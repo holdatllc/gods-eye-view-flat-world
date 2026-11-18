@@ -36,7 +36,8 @@ export class OverlayBridge {
        */
       project(position, out, object) {
         const rec = object?.sourceId ? self._record(object.sourceId) : null;
-        if (rec?.world) return self._screenWorld(rec.world, rec.drawnHeightM, out);
+        if (rec?.world)
+          return self._screenWorld(rec.world, rec.drawnHeightM, out);
         const c = Cesium.Cartographic.fromCartesian(
           position,
           Cesium.Ellipsoid.WGS84,
@@ -107,9 +108,10 @@ export class OverlayBridge {
   _patchSceneTransforms(on) {
     const ST = Cesium.SceneTransforms;
     if (!ST) return;
-    const names = ['worldToWindowCoordinates', 'wgs84ToWindowCoordinates'].filter(
-      (n) => typeof ST[n] === 'function',
-    );
+    const names = [
+      'worldToWindowCoordinates',
+      'wgs84ToWindowCoordinates',
+    ].filter((n) => typeof ST[n] === 'function');
     if (on && !this._origST) {
       this._origST = {};
       for (const n of names) {
