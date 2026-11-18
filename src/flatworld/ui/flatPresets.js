@@ -48,11 +48,14 @@ export function thermalFilter(u = {}) {
   const num = (v, d) => (Number.isFinite(v) ? v : d);
   const sens = num(u.sensitivity, 0.75);
   const glow = num(u.bloom, 0.65);
+  // The globe's own curve: temp = (luma - (0.5 - k/2)) / k with k = mix(0.25, 1, sensitivity),
+  // which is exactly CSS contrast(1/k) about mid-grey. A small lift makes up for the flat
+  // scene's darker exposure; the globe's thermal bloom is a glow, not a level change.
+  const k = 0.25 + 0.75 * Math.min(Math.max(sens, 0), 1);
   const parts = [
     'grayscale(1)',
-    // Gentle enough that the dark night-side photo is not stretched into bands.
-    `brightness(${(1.1 + sens * 0.45 + glow * 0.1).toFixed(2)})`,
-    `contrast(${(1.05 + sens * 0.35).toFixed(2)})`,
+    `brightness(${(1.2 + glow * 0.05).toFixed(2)})`,
+    `contrast(${(1 / k).toFixed(2)})`,
   ];
   if (num(u.mode, 0) >= 0.5) parts.push('invert(1)');
   if (num(u.palette, 0) >= 0.5)
@@ -146,9 +149,11 @@ export function createFlatPresets({ view, viewer }) {
     // The globe's SHARPEN and BLOOM switches and intensities.
     const sharpen = stageNamed(viewer, 'godsEyeView_sharpen');
     if (state.enabled && sharpen?.enabled) {
+      // Milder than a straight kernel of the globe's amount: CSS filters run on CSS pixels, so the
+      // same amount reads twice as hard (FLIR turned into black-and-white speckle).
       const a =
         Math.min(Math.max(Number(sharpen.uniforms?.amount) || 1, 0.1), 2.1) *
-        0.5;
+        0.25;
       parts.push(svgFilter('sharpen', Math.max(1, Math.round(a * 20))));
     }
     const bloom = stageNamed(viewer, 'bloom');
@@ -227,6 +232,8 @@ export function createFlatPresets({ view, viewer }) {
       if (state.style === 'thermal') {
         u.uNightLevel.value = 1;
         if (u.uNightLights) u.uNightLights.value = 0;
+        // Buildings are lit by the sun and sky; at night they went pure black under FLIR.
+        if (view.hemi) view.hemi.intensity = Math.max(view.hemi.intensity, 2.2);
       } else if (state.style === 'surveillance' || state.style === 'nvg')
         u.uNightLevel.value = Math.max(u.uNightLevel.value, 0.6);
     },
