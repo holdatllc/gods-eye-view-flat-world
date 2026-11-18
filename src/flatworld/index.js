@@ -16,7 +16,6 @@ import { VectorLines } from './overlays/vectorLines.js';
 import { IceEnvironment } from './ice/iceEnvironment.js';
 import { RouteLayer } from './nav/routeLayer.js';
 import { BuildingsLayer } from './buildings/buildingsLayer.js';
-import { SkyBodies } from './sky/skyBodies.js';
 import { WallLayer } from './wall/wallLayer.js';
 import {
   createWorldFrame,
@@ -43,7 +42,6 @@ import {
   isFlatReopenPending,
 } from '../overlays/flatProjection.js';
 import { installFlatToolbar } from './ui/flatToolbar.js';
-import { FlatCelestialRing } from './overlays/celestialRingFlat.js';
 import { createGlobeClicks } from './ui/globeClicks.js';
 import { isPointerFree } from '../data/inputOwnership.js';
 import { AircraftSprites } from './overlays/aircraftSprites.js';
@@ -129,10 +127,8 @@ export function mountFlatWorld({ viewer, dataManager }) {
     view.addLayer(routes);
     const buildings = new BuildingsLayer({ frame });
     view.addLayer(buildings);
-    const sky = new SkyBodies({ frame });
-    view.addLayer(sky);
-    // CELESTIAL: the globe's sun/moon ring around the flat disc, from the sky lane's positions.
-    view.addLayer(new FlatCelestialRing({ frame, sky }));
+    // Use the original horizon sun and local day/night lighting from FlatWorldView.
+    // The later model-height sun/moon layer can obscure that sunrise/sunset sky.
     const wall = new WallLayer({ frame });
     view.addLayer(wall);
 
