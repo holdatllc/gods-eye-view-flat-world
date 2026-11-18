@@ -28,6 +28,48 @@ _“pretty cool”_ — [Brendan Eich](https://x.com/BrendanEich/status/20945920
 
 </div>
 
+> ## 🧊 Flat World fork
+>
+> This is a community fork of [God's Eye View](https://github.com/bilawalsidhu/gods-eye-view)
+> by Bilawal Sidhu (MIT). It adds a **Flat World** mode: the same live data laid out on a
+> North-Pole-centred disc in the layout of the 1892 Gleason map, in full 3D, with an endless
+> procedurally generated ice world beyond the South-Pole circle. The rest of this README
+> describes the upstream app, which is unchanged apart from the flat-world hooks.
+>
+> **What the flat view is.** It is an **azimuthal equidistant projection** of the real WGS84
+> Earth, centred on the North Pole. Every aircraft, ship, satellite, building and coastline is
+> placed by projecting its true latitude and longitude, so distances and directions from the
+> North Pole are exact and everything else is stretched (the ROUTES & DISTORTION tools show by
+> how much). The ice beyond the South-Pole circle is generated, hypothetical terrain with no
+> latitude or longitude.
+>
+> **Run it.** Clone this repository, then follow [Path 2](#path-2--terminal--coding-agent)
+> below (Node.js 24.x or 26.x). Pinokio installs the upstream app, which has no Flat World.
+> Docker (Path 3) runs from your clone too, but has not been tested with Flat World.
+>
+> From the cloned folder:
+>
+> ```bash
+> npm ci
+> npm run dev
+> ```
+>
+> Open `http://localhost:4173` and press **FLAT WORLD** at the top centre, or open
+> `http://localhost:4173/?fw=1` to start in it. **BACK TO GLOBE** returns to the globe.
+>
+> **Keys.** None are needed: imagery, terrain, flights, military aircraft and satellites are
+> keyless. To add a key, click **POWER UP** (bottom right) and use Provider Settings. Ships need
+> an AISStream key; the photorealistic globe needs a Cesium ion token or a Google Maps key. The
+> flat world itself needs no key.
+>
+> **Optional local data.** Ocean-floor depth, the polar ice surface, the Antarctic photo layer
+> and night-time city lights come from a local tile folder (`../data/tiles` beside the checkout,
+> or set `GEV_FLATWORLD_DATA_DIR`). Without it the flat world still runs and its Data status
+> line lists the missing tiles. [tools/flatworld/README.md](tools/flatworld/README.md) explains
+> how to build it.
+>
+> Full guide: [docs/FLAT-WORLD.md](docs/FLAT-WORLD.md).
+
 ---
 
 <div align="center">
