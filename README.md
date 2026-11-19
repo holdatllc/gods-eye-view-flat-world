@@ -65,8 +65,11 @@ _“pretty cool”_ — [Brendan Eich](https://x.com/BrendanEich/status/20945920
 > **Optional local data.** Ocean-floor depth, the polar ice surface, the Antarctic photo layer
 > and night-time city lights come from a local tile folder (`../data/tiles` beside the checkout,
 > or set `GEV_FLATWORLD_DATA_DIR`). Without it the flat world still runs and its Data status
-> line lists the missing tiles. [tools/flatworld/README.md](tools/flatworld/README.md) explains
-> how to build it.
+> line lists the missing tiles. To add it, download `flatworld-data-tiles-v1.zip` (about
+> 560 MB) from the [v1.0 release](https://github.com/holdatllc/gods-eye-view-flat-world/releases/tag/v1.0)
+> and unzip it in the folder that contains your clone, so that `data/tiles` sits next to the
+> `gods-eye-view-flat-world` folder, then restart `npm run dev`. To rebuild it yourself instead,
+> see [tools/flatworld/README.md](tools/flatworld/README.md).
 >
 > Full guide: [docs/FLAT-WORLD.md](docs/FLAT-WORLD.md).
 
