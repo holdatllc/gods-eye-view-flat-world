@@ -183,6 +183,11 @@ export class FlatWorldView {
     layer.attach?.(this);
   }
 
+  removeLayer(layer) {
+    if (!this.layers.delete(layer)) return;
+    layer.destroy?.();
+  }
+
   setActive(active) {
     if (active === this.active) return;
     this.active = active;

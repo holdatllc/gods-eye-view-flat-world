@@ -17,6 +17,7 @@ import { IceEnvironment } from './ice/iceEnvironment.js';
 import { RouteLayer } from './nav/routeLayer.js';
 import { BuildingsLayer } from './buildings/buildingsLayer.js';
 import { WallLayer } from './wall/wallLayer.js';
+import { SkyModelSwitch, initialSkyModel } from './sky/skyModels.js';
 import {
   createWorldFrame,
   DOMAIN_GPS,
@@ -130,8 +131,10 @@ export function mountFlatWorld({ viewer, dataManager }) {
     view.addLayer(routes);
     const buildings = new BuildingsLayer({ frame });
     view.addLayer(buildings);
-    // Use the original horizon sun and local day/night lighting from FlatWorldView.
-    // The later model-height sun/moon layer can obscure that sunrise/sunset sky.
+    // Sky model: the original horizon sun (default), the spec's sun-and-moon model, or the
+    // video's dome model. Chosen in SUN & TIME; see sky/skyModels.js.
+    const skyModels = new SkyModelSwitch({ view, frame });
+    skyModels.set(initialSkyModel());
     const wall = new WallLayer({ frame });
     view.addLayer(wall);
 
@@ -354,6 +357,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
       presets,
       planeIcons,
       planeModels,
+      skyModels,
     });
 
     // Picking: a click selects the aircraft, ship or satellite nearest the cursor (every drawn
@@ -526,6 +530,7 @@ export function mountFlatWorld({ viewer, dataManager }) {
       scope,
       planeIcons,
       planeModels,
+      skyModels,
     };
     Object.assign(api, world, {
       diagnostics: () => view.diagnostics(),

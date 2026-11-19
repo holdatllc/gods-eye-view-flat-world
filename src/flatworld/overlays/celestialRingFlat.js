@@ -43,6 +43,10 @@ export class FlatCelestialRing {
     this.root = root;
   }
 
+  destroy() {
+    this.root?.remove();
+  }
+
   /** The globe's CELESTIAL switch (its toolbar button carries the state). */
   _wanted() {
     const btn = document.getElementById('celestial-toggle');

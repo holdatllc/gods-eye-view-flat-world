@@ -55,7 +55,7 @@ function lightMaterial(color, opacity) {
   });
 }
 
-function moonMaterial() {
+export function moonMaterial() {
   return new THREE.ShaderMaterial({
     uniforms: {
       uLight: { value: new THREE.Vector3(1, 0, 0) },
@@ -229,6 +229,7 @@ export class SkyBodies {
     });
     this.dom?.remove();
     this.cards?.remove();
+    this.corner?.remove();
   }
 
   /** Public so the build session can drive it from the URL or panel if it wants to. */

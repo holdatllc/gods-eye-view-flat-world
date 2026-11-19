@@ -5,6 +5,7 @@
 import { DOMAIN_GPS } from '../projection/domains.js';
 import { headingToYaw } from '../render/controls.js';
 import { ROUTE_PRESETS } from '../nav/routeLayer.js';
+import { SKY_MODELS } from '../sky/skyModels.js';
 
 const BOOKMARK_KEY = 'gev.flatworld.bookmarks.v1';
 const MAX_SEED = 2147483647;
@@ -60,6 +61,7 @@ export function createPanel({
   presets = null,
   planeIcons = null,
   planeModels = null,
+  skyModels = null,
 }) {
   /** Smooth mode: satellites re-placed 10×/s and a lighter pixel ratio on high-DPI screens. */
   function applySmooth(on) {
@@ -352,14 +354,52 @@ export function createPanel({
     step: '10',
   });
   const time = rangeRow('Sun time', timeSlider, 'live (real sun)');
-  timeSlider.addEventListener('input', () => {
+  // Date: whole days from today, so the sun's yearly in-and-out circle can be explored.
+  const daySlider = el('input', {
+    type: 'range',
+    min: '-182',
+    max: '183',
+    value: '0',
+    step: '1',
+    'aria-label': 'Date',
+  });
+  const day = rangeRow('Date', daySlider, 'today');
+  const applyOffset = () => {
     const minutes = Number(timeSlider.value);
-    view.time.offsetMinutes = minutes;
+    const days = Number(daySlider.value);
+    view.time.offsetMinutes = minutes + days * 1440;
     time.value.textContent =
       minutes === 0
         ? 'live (real sun)'
         : `${minutes > 0 ? '+' : ''}${(minutes / 60).toFixed(1)} h from now`;
+    day.value.textContent =
+      days === 0
+        ? 'today'
+        : `${days > 0 ? '+' : ''}${days} d (${new Date(
+            Date.now() + days * 86400000,
+          ).toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+          })})`;
+  };
+  timeSlider.addEventListener('input', applyOffset);
+  daySlider.addEventListener('input', applyOffset);
+  const skySel = el('select', {
+    class: 'fw-btn fw-sky-model',
+    'aria-label': 'Sky model',
   });
+  for (const m of SKY_MODELS)
+    skySel.append(el('option', { value: m.id }, m.label));
+  if (skyModels) {
+    skySel.value = skyModels.id;
+    skyModels.onChange((id) => {
+      skySel.value = id;
+    });
+    skySel.addEventListener('change', () => {
+      skyModels.set(skySel.value);
+      skySel.blur();
+    });
+  }
   const iceSkyBtn = button('ICE: SOUTH-POLE SKY', () => {
     view.time.iceSky = view.time.iceSky === 'fixed' ? 'pole' : 'fixed';
     iceSkyBtn.textContent =
@@ -368,8 +408,12 @@ export function createPanel({
         : 'ICE: SOUTH-POLE SKY';
   });
   env.append(
+    el('div', { class: 'fw-kv' }, el('b', {}, 'Sky model')),
+    el('div', { class: 'fw-row' }, skySel),
     time.row,
     timeSlider,
+    day.row,
+    daySlider,
     el('div', { class: 'fw-row' }, iceSkyBtn),
     el(
       'div',

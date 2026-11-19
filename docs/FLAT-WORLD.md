@@ -149,3 +149,13 @@ projected positions.
   data (see `tools/flatworld/README.md`).
 - `scripts/flatworld-shot.mjs <spec.json>` drives Chrome for browser evidence (see
   `program/evidence/*/*.json` in the program folder).
+
+## Sky models (SUN & TIME → Sky model)
+
+One sky model is drawn at a time; the choice is remembered and can be set with `?sky=`.
+
+- `original` (default): the horizon sun and real day/night light.
+- `spec`: the sun-and-moon model in research/sun-moon-spec.md (coil, constant or Rowbotham heights, celestial ring).
+- `dome`: the model from the owner's TikTok (captions kept on the drive at research/tiktok-sky/). Sun and moon 3,000 mi up and 32 mi wide over their real sub-points (June circle about 4,600 mi from the pole, December about 7,800 mi); bright stars (catalogue positions, precessed to date) and planets fixed to a dome 3,100 mi up that turns about Polaris once per sidereal day; faint filler stars are decorative. The dome is flat out to 8,400 mi, then curves down to the rim (a build choice; the video gives only the height). The view centre gets a dashed straight line from the dome sun and the curved light path that matches the real sun direction, with both angles in the panel. Ground light stays the real sun.
+
+The Date slider moves whole days so the sun's yearly in-and-out circle can be explored.

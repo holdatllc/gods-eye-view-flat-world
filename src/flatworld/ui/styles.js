@@ -131,6 +131,8 @@ body.flatworld-active.fw-globe-panels #left-panel-stack { left: 312px !important
   border-radius: 5px; padding: 4px 7px; cursor: pointer; }
 .fw-btn:hover { border-color: #39e1ff; color: #fff; }
 .fw-btn.on { background: rgba(57, 225, 255, 0.28); color: #fff; border-color: #39e1ff; }
+.fw-btn.fw-sky-model { width: 100%; }
+.fw-sky-model option { background: #0b1626; color: #cfeef7; }
 .fw-kv { display: grid; grid-template-columns: 92px 1fr; gap: 1px 6px; }
 .fw-kv b { color: #7fb8c8; font-weight: 400; }
 .fw-tag { display: inline-block; padding: 0 5px; border-radius: 3px; font-weight: 700; letter-spacing: 0.08em; }
